@@ -1,0 +1,412 @@
+import sys
+from pathlib import Path
+import streamlit as st
+import numpy as np
+import pandas as pd
+from sentence_transformers import SentenceTransformer
+from datetime import datetime
+import hashlib
+import json
+import random
+
+# Настройка страницы
+st.set_page_config(page_title="🧬 Personal Fashion OS | RPG", layout="wide", page_icon="🧬")
+st.title("🧬 Personal Fashion OS")
+st.caption("Твій стиль. Твоя екіпіровка. Як у грі. (Powered by EvoPyramid)")
+
+# ---------- Модель эмбеддингов ----------
+@st.cache_resource
+def load_model():
+    return SentenceTransformer("all-mpnet-base-v2")
+
+model = load_model()
+
+# ---------- Вспомогательные функции ----------
+def now_iso():
+    return datetime.utcnow().isoformat()
+
+def hash_bytes(b: bytes) -> str:
+    return hashlib.sha256(b).hexdigest()[:16]
+
+def log_event(event_type: str, payload: dict = None):
+    st.session_state.events.append({
+        "ts": now_iso(),
+        "type": event_type,
+        "payload": payload or {},
+    })
+
+# ---------- Инициализация состояния ----------
+def init_state():
+    if "profile" not in st.session_state:
+        st.session_state.profile = {
+            "user_id": "demo_user",
+            "base_vector": None,
+            "try_vector": None,
+            "use_try": False,
+            "brand_affinities": {},
+            "budget_profile": {"min": 50, "max": 600, "usual": 150},
+            "update_count": 0,
+            "similarity_history": [],
+            "onboarding_done": False,
+            "fav_color": "#4A90E2",
+            "style_pref": "casual",
+            # SKILLS ENGINE STATE:
+            "counters": {},
+            "skills": {},
+            "seen_events": 0
+        }
+    ensure_skill_state(st.session_state.profile)
+
+    if "slots" not in st.session_state:
+        st.session_state.slots = {
+            "top": None,
+            "bottom": None,
+            "shoes": None,
+            "accessory": None,
+        }
+    if "wishlist" not in st.session_state:
+        st.session_state.wishlist = set()
+    if "events" not in st.session_state:
+        st.session_state.events = []
+    if "catalogs" not in st.session_state:
+        st.session_state.catalogs = {}
+    if "current_catalog" not in st.session_state:
+        st.session_state.current_catalog = None
+    if "slot_selection" not in st.session_state:
+        st.session_state.slot_selection = None
+    if "onboarding_step" not in st.session_state:
+        st.session_state.onboarding_step = 0 if not st.session_state.profile["onboarding_done"] else -1
+    if "partner_skill_packs" not in st.session_state:
+        st.session_state.partner_skill_packs = {}
+
+init_state()
+profile = st.session_state.profile
+
+# ---------- Микро-опрос ----------
+if not profile["onboarding_done"]:
+    with st.container():
+        st.markdown("## 🎮 Налаштуй свій стиль за 30 секунд")
+        step = st.session_state.onboarding_step
+
+        if step == 0:
+            st.markdown("### 1. Твій улюблений колір")
+            cols = st.columns(5)
+            colors = {
+                "Синій": "#4A90E2", "Зелений": "#50B883",
+                "Чорний": "#2C3E50", "Білий": "#ECF0F1", "Рожевий": "#E84393"
+            }
+            for i, (name, code) in enumerate(colors.items()):
+                with cols[i]:
+                    if st.button(name, key=f"color_{name}"):
+                        profile["fav_color"] = code
+                        st.session_state.onboarding_step = 1
+                        st.rerun()
+
+        elif step == 1:
+            st.markdown("### 2. Який стиль тобі ближче?")
+            styles = ["Casual", "Street", "Minimal", "Classic", "Sport"]
+            cols = st.columns(len(styles))
+            for i, style in enumerate(styles):
+                with cols[i]:
+                    if st.button(style, key=f"style_{style}"):
+                        profile["style_pref"] = style.lower()
+                        st.session_state.onboarding_step = 2
+                        st.rerun()
+
+        elif step == 2:
+            st.markdown("### 3. Твій бюджет на образ (грн)")
+            budget = st.slider("", 0, 10000, (500, 3000), step=100)
+            if st.button("Далі"):
+                profile["budget_profile"]["min"] = budget[0]
+                profile["budget_profile"]["max"] = budget[1]
+                profile["budget_profile"]["usual"] = (budget[0] + budget[1]) // 2
+                st.session_state.onboarding_step = 3
+                st.rerun()
+
+        elif step == 3:
+            st.markdown("### 4. Твій розмір (необов'язково)")
+            size = st.selectbox("Оберіть розмір", ["XS", "S", "M", "L", "XL", "Пропустити"])
+            if st.button("Завершити"):
+                if size != "Пропустити":
+                    profile["size"] = size
+                profile["onboarding_done"] = True
+                st.session_state.onboarding_step = -1
+                log_event("onboarding_complete", profile)
+                st.rerun()
+    st.stop()
+
+# Заголовок с персонализированным цветом
+st.markdown(f"<style> .stButton>button {{ background-color: {profile['fav_color']}; color: white; border: none; }} </style>", unsafe_allow_html=True)
+
+# ---------- Боковая панель ----------
+with st.sidebar:
+    st.header("🗂️ Каталог")
+    if not st.session_state.catalogs:
+        # Демо-товары с "old_price" и "luxury" метками для витринных навыков
+        demo_items = [
+            {"id": "1", "name": "Оверсайз худи", "brand": "Balenciaga", "price": 4500, "old_price": 6000, "luxury_index": 0.9, "category": "top", "description": "Чорний оверсайз худи", "image": "https://picsum.photos/id/1015/400/500"},
+            {"id": "2", "name": "Slim джинси", "brand": "Levi's", "price": 2700, "old_price": 2700, "luxury_index": 0.3, "category": "bottom", "description": "Класичні сині джинси slim", "image": "https://picsum.photos/id/133/400/500"},
+            {"id": "3", "name": "Білі кросівки", "brand": "Nike", "price": 3200, "old_price": 4000, "luxury_index": 0.5, "category": "shoes", "description": "Мінімалістичні білі кросівки", "image": "https://picsum.photos/id/201/400/500"},
+            {"id": "4", "name": "Шкіряна куртка", "brand": "Zara", "price": 5200, "old_price": 5200, "luxury_index": 0.4, "category": "top", "description": "Коричнева шкіряна куртка", "image": "https://picsum.photos/id/251/400/500"},
+            {"id": "5", "name": "Кашеміровий светр", "brand": "COS", "price": 3900, "old_price": 5000, "luxury_index": 0.7, "category": "top", "description": "Сірий м'який светр", "image": "https://picsum.photos/id/669/400/500"},
+            {"id": "6", "name": "Сумка Birkin", "brand": "Hermes", "price": 9500, "old_price": 9500, "luxury_index": 1.0, "category": "accessory", "description": "Ексклюзивна сумка", "image": "https://picsum.photos/id/660/400/500"}
+        ]
+        st.session_state.catalogs["demo"] = {
+            "items": demo_items,
+            "emb": {it["id"]: model.encode(it["description"]) for it in demo_items},
+            "meta": {"source": "built-in", "count": len(demo_items)}
+        }
+        st.session_state.current_catalog = "demo"
+
+    catalog_ids = list(st.session_state.catalogs.keys())
+    selected_catalog = st.selectbox("Активний каталог", catalog_ids, index=catalog_ids.index(st.session_state.current_catalog) if st.session_state.current_catalog in catalog_ids else 0)
+    st.session_state.current_catalog = selected_catalog
+    cat = st.session_state.catalogs[selected_catalog]
+    items = cat["items"]
+    item_emb = cat["emb"]
+
+    if st.button("♻️ Скинути профіль"):
+        for key in ["profile", "slots", "wishlist", "events", "partner_skill_packs"]:
+            if key in st.session_state:
+                del st.session_state[key]
+        st.rerun()
+
+    # --------- Partner Skill Pack Injector ---------
+    with st.expander("🏷️ Partner Skill Pack (JSON)", expanded=False):
+        st.caption("Загрузи JSON-пак навыков для каталога. Появятся только когда откроются.")
+        pack_file = st.file_uploader("Загрузить skill_pack.json", type=["json"], key="skill_pack_uploader")
+
+        if pack_file is not None:
+            raw = pack_file.read()
+            data = json.loads(raw.decode("utf-8"))
+            target_catalog = data.get("catalog_id", st.session_state.current_catalog)
+            skills_list = data.get("skills", [])
+            parsed_pack = {}
+
+            for s in skills_list:
+                sid, title, desc, icon = str(s["id"]), str(s["title"]), str(s.get("desc", "")), str(s.get("icon", "✨"))
+                unlock = s.get("unlock", {"type": "counter_gte", "key": "wishlist_add", "value": 5})
+                prog = s.get("progress", {"type": "counter_ratio", "key": "wishlist_add", "max": 25})
+                levels = s.get("levels", [0.25, 0.5, 0.75])
+
+                def make_unlock_fn(rule: dict):
+                    rtype = rule.get("type")
+                    if rtype == "counter_gte":
+                        key, val = rule.get("key"), int(rule.get("value", 1))
+                        return lambda p, k=key, v=val: int(p.get("counters", {}).get(k, 0)) >= v
+                    return lambda p: False
+
+                def make_progress_fn(rule: dict):
+                    rtype = rule.get("type")
+                    if rtype == "counter_ratio":
+                        key, mx = rule.get("key"), float(rule.get("max", 20))
+                        return lambda p, k=key, m=mx: min(1.0, float(p.get("counters", {}).get(k, 0)) / m)
+                    return lambda p: 0.0
+
+                parsed_pack[sid] = SkillDef(id=sid, title=title, desc=desc, icon=icon,
+                                            unlock_when=make_unlock_fn(unlock),
+                                            progress_fn=make_progress_fn(prog),
+                                            levels=levels)
+
+            st.session_state.partner_skill_packs[target_catalog] = parsed_pack
+            log_event("partner_skill_pack_loaded", {"catalog_id": target_catalog, "count": len(parsed_pack)})
+            st.success(f"Skill pack загружен для '{target_catalog}'!")
+            st.rerun()
+
+# --------- Движок навыков и пересчет ---------
+process_new_events(profile, st.session_state.events)
+skill_defs = get_skill_defs_for_catalog(selected_catalog, st.session_state.partner_skill_packs)
+unlock_and_update_skills(profile, skill_defs)
+
+# ---------- Основная область ----------
+left_col, right_col = st.columns([1, 1], gap="medium")
+
+with left_col:
+    st.subheader("🖼️ Твій образ")
+    avatar_placeholder = st.empty()
+    with avatar_placeholder.container():
+        st.image("https://via.placeholder.com/400x500?text=Your+Look+(RPG+Inventory)", use_container_width=True)
+    
+    col_s1, col_s2 = st.columns(2)
+    def render_slot(slot_key, label):
+        st.markdown(f"**{label}**")
+        btn = st.button("➕" if st.session_state.slots[slot_key] is None else "🔄", key=f"slot_{slot_key}")
+        if st.session_state.slots[slot_key]:
+            itm = next((it for it in items if it["id"] == st.session_state.slots[slot_key]), None)
+            if itm:
+                st.image(itm["image"], width=100)
+                st.caption(f"{itm['name']}\n{itm['price']} грн")
+        else:
+            st.caption("порожньо")
+        return btn
+
+    with col_s1:
+        t_btn = render_slot("top", "Верх")
+        b_btn = render_slot("bottom", "Низ")
+    with col_s2:
+        s_btn = render_slot("shoes", "Взуття")
+        a_btn = render_slot("accessory", "Аксесуар")
+
+    if t_btn: st.session_state.slot_selection = "top"
+    if b_btn: st.session_state.slot_selection = "bottom"
+    if s_btn: st.session_state.slot_selection = "shoes"
+    if a_btn: st.session_state.slot_selection = "accessory"
+
+with right_col:
+    # ---------------- Вкладки (Control / DNA) ----------------
+    tab_ctrl, tab_rag, tab_dna = st.tabs(["⚙️ Panel", "🤖 AI RAG (GDocs)", "🧬 Style DNA & Skills"])
+
+    with tab_ctrl:
+        st.markdown("**💰 Бюджет**")
+        min_b, max_b = profile["budget_profile"]["min"], profile["budget_profile"]["max"]
+        budget_range = st.slider("Діапазон цін (грн)", 0, 10000, (min_b, max_b), step=100)
+        profile["budget_profile"]["min"], profile["budget_profile"]["max"] = budget_range
+
+        st.markdown("**🎯 Стиль**")
+        style_options = ["Casual", "Street", "Minimal", "Classic", "Sport"]
+        cur_style = profile["style_pref"].capitalize()
+        if cur_style not in style_options: cur_style = "Casual"
+        selected_style = st.radio("Стиль", style_options, index=style_options.index(cur_style), horizontal=True, label_visibility="collapsed")
+        profile["style_pref"] = selected_style.lower()
+
+        if st.button("🎲 Згенерувати образ", use_container_width=True):
+            log_event("generate_outfits", {"budget": budget_range, "style": selected_style})
+            candidates = [it for it in items if budget_range[0] <= it["price"] <= budget_range[1]]
+            tops = [it for it in candidates if it.get("category") == "top"]
+            bottoms = [it for it in candidates if it.get("category") == "bottom"]
+            shoes = [it for it in candidates if it.get("category") == "shoes"]
+            accs = [it for it in candidates if it.get("category") == "accessory"]
+
+            if tops: st.session_state.slots["top"] = random.choice(tops)["id"]
+            if bottoms: st.session_state.slots["bottom"] = random.choice(bottoms)["id"]
+            if shoes: st.session_state.slots["shoes"] = random.choice(shoes)["id"]
+            if accs: st.session_state.slots["accessory"] = random.choice(accs)["id"]
+            st.rerun()
+
+        # Покупка
+        total_price = 0
+        discount_amount = 0
+        luxury_score = 0
+        filled_slots = []
+        for slot_name, item_id in st.session_state.slots.items():
+            if item_id:
+                itm = next((it for it in items if it["id"] == item_id), None)
+                if itm:
+                    total_price += itm["price"]
+                    if "old_price" in itm and itm["old_price"] > itm["price"]:
+                        discount_amount += (itm["old_price"] - itm["price"])
+                    luxury_score += itm.get("luxury_index", 0.0)
+                    filled_slots.append(itm["name"])
+        
+        if filled_slots:
+            st.markdown(f"**🛒 Разом: {total_price} грн**")
+            if discount_amount > 0:
+                st.success(f"💸 Ви економите: {discount_amount} грн!")
+            if st.button("Купити образ", use_container_width=True):
+                st.success("Образ додано до кошика!")
+                log_event("buy_outfit", {"items": filled_slots, "total": total_price})
+                # Триггеры для "витринных" скиллов:
+                if discount_amount > 0: log_event("deal_action")
+                if luxury_score > 1.0: log_event("luxury_action")
+        else:
+            st.info("Оберіть речі або згенеруйте образ")
+
+    with tab_rag:
+        st.subheader("💡 AI Скловод (RAG по Google Docs)")
+        st.caption("Інтеграція бази знань трендів через Google AI Studio.")
+        
+        user_msg = st.text_input("Напишіть запит", placeholder="Наприклад: що одягнути в офіс?")
+        if st.button("Запитати AI (Workflow)", use_container_width=True):
+            if user_msg.strip():
+                import sys, importlib
+                if 'apps.adapters.google_ai_adapter' not in sys.modules:
+                    from apps.adapters.google_ai_adapter import GoogleAIRAGAdapter
+                else:
+                    importlib.reload(sys.modules['apps.adapters.google_ai_adapter'])
+                    from apps.adapters.google_ai_adapter import GoogleAIRAGAdapter
+                
+                adapter = GoogleAIRAGAdapter()
+                with st.spinner("Звертаємось до Google Docs Workflow..."):
+                    rag_res = adapter.query_stylist(user_msg, profile)
+                
+                st.success(rag_res['text_response'])
+                st.caption(f"📚 {rag_res['source']}")
+                
+                # Застосовуємо поради від RAG
+                profile["style_pref"] = rag_res["system_suggestion"]["style"]
+                profile["budget_profile"]["max"] += rag_res["system_suggestion"]["budget_add"]
+                
+                # Симулюємо авто-генерацію образу на основі RAG-трендів
+                budget_range = (profile["budget_profile"]["min"], profile["budget_profile"]["max"])
+                log_event("rag_query_generate", {"text": user_msg, "suggested_style": profile["style_pref"]})
+                
+                candidates = [it for it in items if budget_range[0] <= it["price"] <= budget_range[1]]
+                tops = [it for it in candidates if it.get("category") == "top"]
+                bottoms = [it for it in candidates if it.get("category") == "bottom"]
+                shoes = [it for it in candidates if it.get("category") == "shoes"]
+                accs = [it for it in candidates if it.get("category") == "accessory"]
+
+                if tops: st.session_state.slots["top"] = random.choice(tops)["id"]
+                if bottoms: st.session_state.slots["bottom"] = random.choice(bottoms)["id"]
+                if shoes: st.session_state.slots["shoes"] = random.choice(shoes)["id"]
+                if accs: st.session_state.slots["accessory"] = random.choice(accs)["id"]
+                
+                st.info(f"✔️ Екіпіровка (слоти) миттєво оновлена під тренд '{profile['style_pref']}'")
+                st.rerun()
+
+    with tab_dna:
+        st.subheader("🧬 Твоє Style DNA")
+        st.write("Тут будет график или статика из эмбеддингов")
+
+        st.divider()
+        st.subheader("🎮 Навыки (твій індивідуальний стек)")
+        visible = get_visible_skills(profile, min_progress=0.01)
+
+        if not visible:
+            st.info("Навик відкриються автоматично. Продовжуй збирати образи та купувати.")
+        else:
+            cols = st.columns(2)
+            for i, sk in enumerate(visible):
+                with cols[i % 2]:
+                    st.markdown(f"{sk['icon']} **{sk['title']}** · lvl {sk.get('level',1)}")
+                    st.progress(float(sk.get("progress", 0.0)))
+                    st.caption(sk.get("desc",""))
+
+# ---------- Карусель выбора предмета ----------
+if st.session_state.slot_selection is not None:
+    slot = st.session_state.slot_selection
+    st.markdown(f"## Оберіть {slot}")
+
+    cat_map = {"top": "top", "bottom": "bottom", "shoes": "shoes", "accessory": "accessory"}
+    cat_match = cat_map.get(slot, slot)
+    cands = [it for it in items if it.get("category") == cat_match and budget_range[0] <= it["price"] <= budget_range[1]]
+
+    if not cands:
+        st.warning("Немає товарів у цій категорії в межах бюджету")
+        if st.button("Назад"):
+            st.session_state.slot_selection = None
+            st.rerun()
+    else:
+        cols = st.columns(3)
+        for idx, item in enumerate(cands[:9]):
+            with cols[idx % 3]:
+                st.image(item["image"], width=150)
+                price_str = f"{item['price']} грн"
+                if "old_price" in item and item["old_price"] > item["price"]:
+                    price_str = f"~~{item['old_price']}~~ {price_str} 🔥"
+                st.markdown(f"**{item['name']}**\n\n{price_str}")
+                if st.button("Обрати", key=f"sel_{item['id']}"):
+                    st.session_state.slots[slot] = item["id"]
+                    st.session_state.slot_selection = None
+                    log_event("wishlist_add", {"item_id": item["id"]})  # трактуем выбор как wishlist
+                    st.rerun()
+        if st.button("Скасувати"):
+            st.session_state.slot_selection = None
+            st.rerun()
+    st.stop()
+
+# ---------- Логи ----------
+with st.expander("📎 Останні події"):
+    if st.session_state.events:
+        df = pd.DataFrame(st.session_state.events[-10:])
+        st.dataframe(df, use_container_width=True, hide_index=True)
