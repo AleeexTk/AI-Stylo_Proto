@@ -25,6 +25,7 @@ from apps.core.skills_engine import (
 from apps.adapters.ollama_adapter import OllamaAdapter, OllamaAdapterError
 from apps.core.ai.orchestrator import PEAROrchestrator
 from apps.core.contracts import AssistantResult
+from apps.core.tools.registry import LocalToolRegistry
 
 USE_GOOGLE_RAG_FALLBACK = os.getenv("USE_GOOGLE_RAG_FALLBACK", "0").lower() in {"1", "true", "yes", "on"}
 
@@ -106,17 +107,9 @@ def get_ollama_adapter() -> OllamaAdapter:
     return OllamaAdapter()
 
 
-class _NoopToolRegistry:
-    def tool_schemas(self) -> list[dict]:
-        return []
-
-    def execute(self, tool_name: str, arguments: dict) -> dict:
-        return {"error": f"Tool '{tool_name}' is not registered in UI mode."}
-
-
 @st.cache_resource
 def get_orchestrator() -> PEAROrchestrator:
-    return PEAROrchestrator(ollama_adapter=get_ollama_adapter(), tool_registry=_NoopToolRegistry())
+    return PEAROrchestrator(ollama_adapter=get_ollama_adapter(), tool_registry=LocalToolRegistry())
 
 
 def run_ollama_healthcheck() -> tuple[bool, str]:
