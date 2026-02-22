@@ -1,21 +1,10 @@
 import json
-from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Protocol, Tuple
+from typing import Any, Dict, List, Optional, Protocol
 
 from apps.adapters.ollama_adapter import OllamaAdapter
-from apps.core.contracts import Profile
+from apps.core.contracts import AssistantMessage, AssistantResult, Profile, ToolResult
 
-
-@dataclass
-class AssistantResult:
-    reply: str
-    domain: str
-    profile: Profile
-    preferences: Dict[str, Any]
-    tool_results: List[Dict[str, Any]] = field(default_factory=list)
-    reflection_note: str = ""
-    raw_response: Dict[str, Any] = field(default_factory=dict)
 
 
 class ProfileRepository(Protocol):
@@ -95,19 +84,17 @@ class PEAROrchestrator:
         note = self.reflect(
             user_id=user_id,
             user_message=user_message,
-            assistant_reply=act_result["reply"],
+            assistant_reply=act_result.final_text,
             domain=domain,
         )
 
-        return AssistantResult(
-            reply=act_result["reply"],
-            domain=domain,
-            profile=context["profile"],
-            preferences=context["preferences"],
-            tool_results=act_result["tool_results"],
-            reflection_note=note,
-            raw_response=act_result["raw_response"],
-        )
+        act_result.notes.append(note)
+        act_result.metadata.update({
+            "domain": domain,
+            "profile": context["profile"],
+            "preferences": context["preferences"],
+        })
+        return act_result
 
     def perceive(self, user_message: str) -> str:
         text = user_message.lower()
@@ -131,7 +118,7 @@ class PEAROrchestrator:
             "memory_notes": memory_notes,
         }
 
-    def act(self, user_message: str, domain: str, context: Dict[str, Any]) -> Dict[str, Any]:
+    def act(self, user_message: str, domain: str, context: Dict[str, Any]) -> AssistantResult:
         system_prompt = self._build_system_prompt(domain=domain, context=context)
         messages: List[Dict[str, Any]] = [
             {"role": "system", "content": system_prompt},
@@ -140,44 +127,47 @@ class PEAROrchestrator:
 
         tools = self.tool_registry.tool_schemas()
         first_response = self.ollama_adapter.chat(messages=messages, tools=tools)
-        assistant_message = first_response.get("message", {})
-        tool_calls = assistant_message.get("tool_calls", []) or []
+        assistant_message = AssistantMessage.from_raw(first_response.get("message", {}))
 
-        tool_results: List[Dict[str, Any]] = []
-        if tool_calls:
+        tool_results: List[ToolResult] = []
+        if assistant_message.tool_calls:
             messages.append(
                 {
                     "role": "assistant",
-                    "content": assistant_message.get("content", ""),
-                    "tool_calls": tool_calls,
+                    "content": assistant_message.content,
+                    "tool_calls": [
+                        {
+                            "id": call.call_id,
+                            "function": {"name": call.name, "arguments": json.dumps(call.arguments, ensure_ascii=False)},
+                        }
+                        for call in assistant_message.tool_calls
+                    ],
                 }
             )
 
-            for call in tool_calls:
-                tool_name, arguments = self._extract_tool_call(call)
-                result = self.tool_registry.execute(tool_name=tool_name, arguments=arguments)
-                tool_results.append({"tool_name": tool_name, "arguments": arguments, "result": result})
+            for call in assistant_message.tool_calls:
+                result = self.tool_registry.execute(tool_name=call.name, arguments=call.arguments)
+                tool_results.append(ToolResult(tool_name=call.name, arguments=call.arguments, result=result, call_id=call.call_id))
                 messages.append(
                     {
                         "role": "tool",
-                        "name": tool_name,
+                        "name": call.name,
                         "content": json.dumps(result, ensure_ascii=False),
                     }
                 )
 
             second_response = self.ollama_adapter.chat(messages=messages, tools=tools)
-            final_message = second_response.get("message", {})
-            return {
-                "reply": final_message.get("content", ""),
-                "tool_results": tool_results,
-                "raw_response": second_response,
-            }
+            return AssistantResult.normalize_from_llm_response(
+                llm_response=second_response,
+                tool_outputs=tool_results,
+                metadata={"step": "post-tools", "tool_call_count": len(tool_results)},
+            )
 
-        return {
-            "reply": assistant_message.get("content", ""),
-            "tool_results": tool_results,
-            "raw_response": first_response,
-        }
+        return AssistantResult.normalize_from_llm_response(
+            llm_response=first_response,
+            tool_outputs=tool_results,
+            metadata={"step": "single-pass", "tool_call_count": 0},
+        )
 
     def reflect(self, user_id: str, user_message: str, assistant_reply: str, domain: str) -> str:
         short_user = user_message.strip().replace("\n", " ")[:90]
@@ -206,23 +196,3 @@ class PEAROrchestrator:
             "When tools are available, call them when needed and ground your answer in tool outputs."
         )
 
-    @staticmethod
-    def _extract_tool_call(call: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
-        function_payload = call.get("function", {}) if isinstance(call, dict) else {}
-        tool_name = function_payload.get("name") or call.get("name")
-        raw_arguments = function_payload.get("arguments", call.get("arguments", {}))
-
-        if isinstance(raw_arguments, str):
-            try:
-                arguments = json.loads(raw_arguments)
-            except json.JSONDecodeError:
-                arguments = {}
-        elif isinstance(raw_arguments, dict):
-            arguments = raw_arguments
-        else:
-            arguments = {}
-
-        if not tool_name:
-            raise ValueError("Tool call is missing tool name.")
-
-        return tool_name, arguments
