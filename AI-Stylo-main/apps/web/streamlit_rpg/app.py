@@ -8,6 +8,29 @@ from datetime import datetime
 import hashlib
 import json
 import random
+import os
+
+project_root = Path(__file__).resolve().parent.parent.parent.parent
+if str(project_root) not in sys.path:
+    sys.path.append(str(project_root))
+
+from apps.core.skills_engine import (
+    SkillDef,
+    ensure_skill_state,
+    process_new_events,
+    get_skill_defs_for_catalog,
+    unlock_and_update_skills,
+    get_visible_skills,
+)
+from apps.adapters.ollama_adapter import OllamaAdapter, OllamaAdapterError
+from apps.core.ai.orchestrator import PEAROrchestrator
+from apps.core.tools_registry import PreferenceToolRegistry
+from apps.core.contracts import AssistantResult
+
+
+DOMAIN_OPTIONS = ["fashion", "cinema"]
+
+USE_GOOGLE_RAG_FALLBACK = os.getenv("USE_GOOGLE_RAG_FALLBACK", "0").lower() in {"1", "true", "yes", "on"}
 
 # Настройка страницы
 st.set_page_config(page_title="🧬 Personal Fashion OS | RPG", layout="wide", page_icon="🧬")
@@ -78,9 +101,57 @@ def init_state():
         st.session_state.onboarding_step = 0 if not st.session_state.profile["onboarding_done"] else -1
     if "partner_skill_packs" not in st.session_state:
         st.session_state.partner_skill_packs = {}
+    if "assistant_result" not in st.session_state:
+        st.session_state.assistant_result = None
+    if "assistant_domain" not in st.session_state:
+        st.session_state.assistant_domain = "fashion"
 
 init_state()
 profile = st.session_state.profile
+
+@st.cache_resource
+def get_ollama_adapter() -> OllamaAdapter:
+    return OllamaAdapter()
+
+
+class _SessionToolRegistry(PreferenceToolRegistry):
+    def __init__(self, profile_store: dict):
+        super().__init__(preference_store=profile_store, default_domain="fashion")
+        self.domain_options = tuple(DOMAIN_OPTIONS)
+
+    def execute(self, tool_name: str, arguments: dict) -> dict:
+        if "domain" not in arguments:
+            arguments = dict(arguments)
+            arguments["domain"] = st.session_state.get("assistant_domain", "fashion")
+
+        result = super().execute(tool_name=tool_name, arguments=arguments)
+        if result.get("ok"):
+            saved = result.get("saved", {})
+            key = next(iter(saved.keys()), "")
+            value = saved.get(key)
+            log_event("save_preference", {"domain": result.get("domain"), "key": key, "value": value})
+        return result
+
+
+@st.cache_resource
+def get_orchestrator() -> PEAROrchestrator:
+    return PEAROrchestrator(ollama_adapter=get_ollama_adapter(), tool_registry=_SessionToolRegistry(st.session_state.profile))
+
+
+def run_ollama_healthcheck() -> tuple[bool, str]:
+    try:
+        status = get_ollama_adapter().health()
+        return True, (
+            f"✅ Ollama online ({status['models']['chat']} / {status['models']['embed']})"
+        )
+    except OllamaAdapterError as exc:
+        return False, f"⚠️ Ollama недоступний: {exc}"
+
+
+ollama_available, ollama_status_message = run_ollama_healthcheck()
+st.caption(ollama_status_message)
+if not ollama_available:
+    st.warning("Локальний AI недоступний. Перевірте OLLAMA_BASE_URL і моделі.")
 
 # ---------- Микро-опрос ----------
 if not profile["onboarding_done"]:
@@ -312,47 +383,108 @@ with right_col:
             st.info("Оберіть речі або згенеруйте образ")
 
     with tab_rag:
-        st.subheader("💡 AI Скловод (RAG по Google Docs)")
-        st.caption("Інтеграція бази знань трендів через Google AI Studio.")
-        
-        user_msg = st.text_input("Напишіть запит", placeholder="Наприклад: що одягнути в офіс?")
-        if st.button("Запитати AI (Workflow)", use_container_width=True):
-            if user_msg.strip():
-                import sys, importlib
-                if 'apps.adapters.google_ai_adapter' not in sys.modules:
-                    from apps.adapters.google_ai_adapter import GoogleAIRAGAdapter
-                else:
-                    importlib.reload(sys.modules['apps.adapters.google_ai_adapter'])
-                    from apps.adapters.google_ai_adapter import GoogleAIRAGAdapter
-                
-                adapter = GoogleAIRAGAdapter()
-                with st.spinner("Звертаємось до Google Docs Workflow..."):
-                    rag_res = adapter.query_stylist(user_msg, profile)
-                
-                st.success(rag_res['text_response'])
-                st.caption(f"📚 {rag_res['source']}")
-                
-                # Застосовуємо поради від RAG
-                profile["style_pref"] = rag_res["system_suggestion"]["style"]
-                profile["budget_profile"]["max"] += rag_res["system_suggestion"]["budget_add"]
-                
-                # Симулюємо авто-генерацію образу на основі RAG-трендів
-                budget_range = (profile["budget_profile"]["min"], profile["budget_profile"]["max"])
-                log_event("rag_query_generate", {"text": user_msg, "suggested_style": profile["style_pref"]})
-                
-                candidates = [it for it in items if budget_range[0] <= it["price"] <= budget_range[1]]
-                tops = [it for it in candidates if it.get("category") == "top"]
-                bottoms = [it for it in candidates if it.get("category") == "bottom"]
-                shoes = [it for it in candidates if it.get("category") == "shoes"]
-                accs = [it for it in candidates if it.get("category") == "accessory"]
+        st.subheader("💡 AI Assistant Studio")
+        st.caption("Працює через PEAR Orchestrator. Доступний tool trigger: save_preference.")
+        st.caption(f"Health: {ollama_status_message}")
 
-                if tops: st.session_state.slots["top"] = random.choice(tops)["id"]
-                if bottoms: st.session_state.slots["bottom"] = random.choice(bottoms)["id"]
-                if shoes: st.session_state.slots["shoes"] = random.choice(shoes)["id"]
-                if accs: st.session_state.slots["accessory"] = random.choice(accs)["id"]
-                
-                st.info(f"✔️ Екіпіровка (слоти) миттєво оновлена під тренд '{profile['style_pref']}'")
-                st.rerun()
+        st.session_state.assistant_domain = st.radio(
+            "Домен",
+            DOMAIN_OPTIONS,
+            index=DOMAIN_OPTIONS.index(st.session_state.assistant_domain) if st.session_state.assistant_domain in DOMAIN_OPTIONS else 0,
+            horizontal=True,
+        )
+        prompt_placeholder = "Наприклад: підбери образ для офісу" if st.session_state.assistant_domain == "fashion" else "Наприклад: порадь фільм на вечір"
+        user_msg = st.text_input("Поле запиту", placeholder=prompt_placeholder)
+
+        pref_col1, pref_col2, pref_col3 = st.columns([1.1, 1.1, 0.8])
+        with pref_col1:
+            pref_key = st.text_input("Preference key", value="tone")
+        with pref_col2:
+            pref_value = st.text_input("Preference value", value="concise")
+        with pref_col3:
+            save_pref_clicked = st.button("💾 Зберегти preference", use_container_width=True)
+
+        if save_pref_clicked:
+            tool_result = get_orchestrator().tool_registry.execute(
+                "save_preference",
+                {
+                    "domain": st.session_state.assistant_domain,
+                    "key": pref_key,
+                    "value": pref_value,
+                },
+            )
+            st.session_state.assistant_result = AssistantResult(
+                final_text="Preference saved via explicit save_preference trigger.",
+                tool_outputs=[],
+                metadata={"manual_tool_trigger": "save_preference", "tool_result": tool_result},
+            )
+            if tool_result.get("ok"):
+                st.success("Preference збережено")
+            else:
+                st.error(f"Не вдалося зберегти preference: {tool_result.get('error', 'unknown error')}")
+
+        if st.button("Запитати AI", use_container_width=True):
+            if user_msg.strip():
+                if not ollama_available:
+                    st.warning("Ollama недоступний. Перевірте локальний сервіс.")
+                else:
+                    try:
+                        with st.spinner("Звертаємось до Orchestrator..."):
+                            assistant_result: AssistantResult = get_orchestrator().handle(
+                                user_id=profile["user_id"],
+                                user_message=user_msg,
+                                forced_domain=st.session_state.assistant_domain,
+                            )
+                        st.session_state.assistant_result = assistant_result
+                        log_event(
+                            "rag_query_generate",
+                            {
+                                "text": user_msg,
+                                "provider": "ollama",
+                                "domain": st.session_state.assistant_domain,
+                                "tool_calls": len(assistant_result.tool_outputs),
+                                "orchestrator_step": assistant_result.metadata.get("step", ""),
+                            },
+                        )
+                    except OllamaAdapterError as exc:
+                        st.error(f"Ollama помилка: {exc}")
+
+        assistant_result = st.session_state.assistant_result
+        if assistant_result:
+            st.markdown("### Відповідь асистента")
+            st.success(assistant_result.final_text.strip() or "(порожня відповідь)")
+
+            st.markdown("### Tool calls")
+            if assistant_result.tool_outputs:
+                tool_payload = [
+                    {
+                        "tool": out.tool_name,
+                        "arguments": out.arguments,
+                        "result": out.result,
+                        "call_id": out.call_id,
+                    }
+                    for out in assistant_result.tool_outputs
+                ]
+                st.json(tool_payload)
+            elif assistant_result.metadata.get("manual_tool_trigger"):
+                st.json([
+                    {
+                        "tool": assistant_result.metadata["manual_tool_trigger"],
+                        "result": assistant_result.metadata.get("tool_result", {}),
+                    }
+                ])
+            else:
+                st.info("Tool-и не викликались.")
+
+            with st.expander("Повний JSON результат Orchestrator", expanded=False):
+                st.json(
+                    {
+                        "final_text": assistant_result.final_text,
+                        "tool_outputs": assistant_result.tool_results,
+                        "notes": assistant_result.notes,
+                        "metadata": assistant_result.metadata,
+                    }
+                )
 
     with tab_dna:
         st.subheader("🧬 Твоє Style DNA")

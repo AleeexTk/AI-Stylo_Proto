@@ -23,6 +23,33 @@ make demo-data
 - `run-b2b` launches the embedded-store demo screen.
 - `demo-data` generates `data/demo_catalog.json` for repeatable local demos.
 
+## Environment variables
+
+```bash
+# Ollama connection
+export OLLAMA_BASE_URL=http://localhost:11434
+export OLLAMA_CHAT_MODEL=llama3
+export OLLAMA_EMBED_MODEL=nomic-embed-text
+export OLLAMA_TIMEOUT=30
+
+# Optional: allow legacy Google RAG fallback when Ollama is unavailable
+export USE_GOOGLE_RAG_FALLBACK=0
+```
+
+## Local run example (Ollama-first)
+
+```bash
+# 1) Start Ollama and pull models once
+ollama serve
+ollama pull llama3
+ollama pull nomic-embed-text
+
+# 2) Run app
+python main.py
+# or
+streamlit run apps/web/streamlit_rpg/app.py
+```
+
 ## Current repo layout
 
 ```text
@@ -50,7 +77,3 @@ See `docs/GITHUB_ISSUES.md` for a prioritized issue list that can be copied into
 ## Local Ollama assistant plan (RU)
 
 See `docs/LOCAL_AI_ASSISTANT_PLAN_RU.md` for a detailed architecture, roadmap, risks, testing, and budget for the offline-first Sergey assistant.
-
-## Implementation status and EvoPyramid note (RU)
-
-See `docs/IMPLEMENTATION_STATUS_RU.md` for a repository-based status check and explicit marking that development/testing is done on a minimal necessary EvoPyramid architecture basis for AI-Stylo.
