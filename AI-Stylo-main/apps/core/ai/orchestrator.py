@@ -78,8 +78,8 @@ class PEAROrchestrator:
         self.preference_repo = preference_repo or SQLitePreferenceStore()
         self.memory = memory or SQLiteVectorStore()
 
-    def handle(self, user_id: str, user_message: str) -> AssistantResult:
-        domain = self.perceive(user_message)
+    def handle(self, user_id: str, user_message: str, forced_domain: Optional[str] = None) -> AssistantResult:
+        domain = (forced_domain or "").strip().lower() or self.perceive(user_message)
         context = self.enrich(user_id=user_id, domain=domain)
         act_result = self.act(user_message=user_message, domain=domain, context=context)
         note = self.reflect(
@@ -196,4 +196,3 @@ class PEAROrchestrator:
             f"Recent memory notes: {json.dumps(memory_notes, ensure_ascii=False)}\n"
             "When tools are available, call them when needed and ground your answer in tool outputs."
         )
-
