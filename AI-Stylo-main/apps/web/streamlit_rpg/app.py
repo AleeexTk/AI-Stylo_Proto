@@ -24,6 +24,7 @@ from apps.core.skills_engine import (
 )
 from apps.adapters.ollama_adapter import OllamaAdapter, OllamaAdapterError
 from apps.core.ai.orchestrator import PEAROrchestrator
+from apps.core.tools_registry import PreferenceToolRegistry
 from apps.core.contracts import AssistantResult
 
 
@@ -113,57 +114,23 @@ def get_ollama_adapter() -> OllamaAdapter:
     return OllamaAdapter()
 
 
-class _SessionToolRegistry:
+class _SessionToolRegistry(PreferenceToolRegistry):
     def __init__(self, profile_store: dict):
-        self.profile_store = profile_store
-
-    def tool_schemas(self) -> list[dict]:
-        return [
-            {
-                "type": "function",
-                "function": {
-                    "name": "save_preference",
-                    "description": "Persist a user preference for the active domain.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "key": {"type": "string", "description": "Preference key, e.g. tone/style/genre"},
-                            "value": {"description": "Preference value"},
-                            "domain": {"type": "string", "enum": DOMAIN_OPTIONS},
-                        },
-                        "required": ["key", "value"],
-                    },
-                },
-            }
-        ]
+        super().__init__(preference_store=profile_store, default_domain="fashion")
+        self.domain_options = tuple(DOMAIN_OPTIONS)
 
     def execute(self, tool_name: str, arguments: dict) -> dict:
-        if tool_name != "save_preference":
-            return {"ok": False, "error": f"Unsupported tool: {tool_name}"}
+        if "domain" not in arguments:
+            arguments = dict(arguments)
+            arguments["domain"] = st.session_state.get("assistant_domain", "fashion")
 
-        key = str(arguments.get("key", "")).strip()
-        if not key:
-            return {"ok": False, "error": "Missing required argument: key"}
-
-        domain = str(arguments.get("domain") or st.session_state.get("assistant_domain", "fashion")).strip().lower()
-        if domain not in DOMAIN_OPTIONS:
-            domain = "fashion"
-
-        raw_value = arguments.get("value")
-        value = raw_value if isinstance(raw_value, (dict, list, int, float, bool)) else str(raw_value).strip()
-
-        store = self.profile_store.setdefault("saved_preferences", {})
-        domain_store = store.setdefault(domain, {})
-        domain_store[key] = value
-
-        log_event("save_preference", {"domain": domain, "key": key, "value": value})
-        return {
-            "ok": True,
-            "tool": "save_preference",
-            "domain": domain,
-            "saved": {key: value},
-            "all_preferences": domain_store,
-        }
+        result = super().execute(tool_name=tool_name, arguments=arguments)
+        if result.get("ok"):
+            saved = result.get("saved", {})
+            key = next(iter(saved.keys()), "")
+            value = saved.get(key)
+            log_event("save_preference", {"domain": result.get("domain"), "key": key, "value": value})
+        return result
 
 
 @st.cache_resource
