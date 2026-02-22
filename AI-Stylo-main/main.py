@@ -2,6 +2,8 @@ import sys
 import subprocess
 from pathlib import Path
 
+from apps.adapters.ollama_adapter import OllamaAdapter, OllamaAdapterError
+
 def main():
     """Point of entry for AI-Stylo. Resolves path and launches streamlit app."""
     project_root = Path(__file__).parent.resolve()
@@ -12,7 +14,17 @@ def main():
         sys.exit(1)
         
     print(f"Starting Personal Fashion OS from: {app_path}")
-    
+
+    adapter = OllamaAdapter()
+    try:
+        health = adapter.health()
+        print(f"[Ollama] OK: {health['models']['chat']} @ {health['base_url']}")
+    except OllamaAdapterError as exc:
+        print(f"[Ollama] UNAVAILABLE: {exc}")
+        print("The app will still start, but AI features may be degraded.")
+    finally:
+        adapter.close()
+
     # Run streamlit
     try:
         subprocess.run(["streamlit", "run", str(app_path)], check=True)

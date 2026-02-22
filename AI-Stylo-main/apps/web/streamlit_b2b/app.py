@@ -7,9 +7,28 @@ if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
 from apps.core.contracts import Item, Profile, Event
+from apps.adapters.ollama_adapter import OllamaAdapter, OllamaAdapterError
+
+@st.cache_resource
+def get_ollama_adapter() -> OllamaAdapter:
+    return OllamaAdapter()
+
+
+def ollama_diagnostic_message() -> tuple[bool, str]:
+    try:
+        health = get_ollama_adapter().health()
+        return True, f"✅ Ollama online: {health['models']['chat']}"
+    except OllamaAdapterError as exc:
+        return False, f"⚠️ Ollama недоступний: {exc}"
+
 
 st.set_page_config(page_title="Personal Fashion OS | B2B Plugin Demo", layout="centered")
 st.title("🛍️ Картка товару (B2B Плагін)")
+
+ollama_ok, ollama_message = ollama_diagnostic_message()
+st.caption(ollama_message)
+if not ollama_ok:
+    st.warning("Локальний Ollama не відповідає. Функції AI можуть бути обмежені.")
 
 st.markdown("### Худи Balenciaga (Демо)")
 st.image("https://picsum.photos/id/1015/400/500", width=300)
