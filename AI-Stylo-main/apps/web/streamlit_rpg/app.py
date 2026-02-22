@@ -8,6 +8,23 @@ from datetime import datetime
 import hashlib
 import json
 import random
+import os
+
+project_root = Path(__file__).resolve().parent.parent.parent.parent
+if str(project_root) not in sys.path:
+    sys.path.append(str(project_root))
+
+from apps.core.skills_engine import (
+    SkillDef,
+    ensure_skill_state,
+    process_new_events,
+    get_skill_defs_for_catalog,
+    unlock_and_update_skills,
+    get_visible_skills,
+)
+from apps.adapters.ollama_adapter import OllamaAdapter, OllamaAdapterError
+
+USE_GOOGLE_RAG_FALLBACK = os.getenv("USE_GOOGLE_RAG_FALLBACK", "0").lower() in {"1", "true", "yes", "on"}
 
 # Настройка страницы
 st.set_page_config(page_title="🧬 Personal Fashion OS | RPG", layout="wide", page_icon="🧬")
@@ -81,6 +98,26 @@ def init_state():
 
 init_state()
 profile = st.session_state.profile
+
+@st.cache_resource
+def get_ollama_adapter() -> OllamaAdapter:
+    return OllamaAdapter()
+
+
+def run_ollama_healthcheck() -> tuple[bool, str]:
+    try:
+        status = get_ollama_adapter().health()
+        return True, (
+            f"✅ Ollama online ({status['models']['chat']} / {status['models']['embed']})"
+        )
+    except OllamaAdapterError as exc:
+        return False, f"⚠️ Ollama недоступний: {exc}"
+
+
+ollama_available, ollama_status_message = run_ollama_healthcheck()
+st.caption(ollama_status_message)
+if not ollama_available:
+    st.warning("Локальний AI недоступний. Перевірте OLLAMA_BASE_URL і моделі.")
 
 # ---------- Микро-опрос ----------
 if not profile["onboarding_done"]:
@@ -312,47 +349,65 @@ with right_col:
             st.info("Оберіть речі або згенеруйте образ")
 
     with tab_rag:
-        st.subheader("💡 AI Скловод (RAG по Google Docs)")
-        st.caption("Інтеграція бази знань трендів через Google AI Studio.")
-        
-        user_msg = st.text_input("Напишіть запит", placeholder="Наприклад: що одягнути в офіс?")
-        if st.button("Запитати AI (Workflow)", use_container_width=True):
-            if user_msg.strip():
-                import sys, importlib
-                if 'apps.adapters.google_ai_adapter' not in sys.modules:
-                    from apps.adapters.google_ai_adapter import GoogleAIRAGAdapter
-                else:
-                    importlib.reload(sys.modules['apps.adapters.google_ai_adapter'])
-                    from apps.adapters.google_ai_adapter import GoogleAIRAGAdapter
-                
-                adapter = GoogleAIRAGAdapter()
-                with st.spinner("Звертаємось до Google Docs Workflow..."):
-                    rag_res = adapter.query_stylist(user_msg, profile)
-                
-                st.success(rag_res['text_response'])
-                st.caption(f"📚 {rag_res['source']}")
-                
-                # Застосовуємо поради від RAG
-                profile["style_pref"] = rag_res["system_suggestion"]["style"]
-                profile["budget_profile"]["max"] += rag_res["system_suggestion"]["budget_add"]
-                
-                # Симулюємо авто-генерацію образу на основі RAG-трендів
-                budget_range = (profile["budget_profile"]["min"], profile["budget_profile"]["max"])
-                log_event("rag_query_generate", {"text": user_msg, "suggested_style": profile["style_pref"]})
-                
-                candidates = [it for it in items if budget_range[0] <= it["price"] <= budget_range[1]]
-                tops = [it for it in candidates if it.get("category") == "top"]
-                bottoms = [it for it in candidates if it.get("category") == "bottom"]
-                shoes = [it for it in candidates if it.get("category") == "shoes"]
-                accs = [it for it in candidates if it.get("category") == "accessory"]
+        st.subheader("💡 AI Стиліст (Ollama)")
+        st.caption("Локальний Ollama використовується за замовчуванням. Google RAG — лише fallback.")
+        if USE_GOOGLE_RAG_FALLBACK:
+            st.caption("Fallback Google RAG: увімкнено (USE_GOOGLE_RAG_FALLBACK=1).")
 
-                if tops: st.session_state.slots["top"] = random.choice(tops)["id"]
-                if bottoms: st.session_state.slots["bottom"] = random.choice(bottoms)["id"]
-                if shoes: st.session_state.slots["shoes"] = random.choice(shoes)["id"]
-                if accs: st.session_state.slots["accessory"] = random.choice(accs)["id"]
-                
-                st.info(f"✔️ Екіпіровка (слоти) миттєво оновлена під тренд '{profile['style_pref']}'")
-                st.rerun()
+        user_msg = st.text_input("Напишіть запит", placeholder="Наприклад: що одягнути в офіс?")
+        if st.button("Запитати AI", use_container_width=True):
+            if user_msg.strip():
+                rag_text = None
+
+                if ollama_available:
+                    messages = [
+                        {
+                            "role": "system",
+                            "content": (
+                                "Ти fashion-стиліст. Відповідай коротко українською та дай практичну пораду."
+                            ),
+                        },
+                        {"role": "user", "content": user_msg},
+                    ]
+                    try:
+                        with st.spinner("Звертаємось до локального Ollama..."):
+                            response = get_ollama_adapter().chat(messages)
+                        rag_text = response.get("message", {}).get("content", "").strip()
+                        log_event("rag_query_generate", {"text": user_msg, "provider": "ollama"})
+                    except OllamaAdapterError as exc:
+                        st.error(f"Ollama помилка: {exc}")
+
+                if not rag_text and USE_GOOGLE_RAG_FALLBACK:
+                    from apps.adapters.google_ai_adapter import GoogleAIRAGAdapter
+
+                    adapter = GoogleAIRAGAdapter()
+                    with st.spinner("Fallback до Google Docs Workflow..."):
+                        rag_res = adapter.query_stylist(user_msg, profile)
+                    rag_text = rag_res["text_response"]
+                    profile["style_pref"] = rag_res["system_suggestion"]["style"]
+                    profile["budget_profile"]["max"] += rag_res["system_suggestion"]["budget_add"]
+                    log_event("rag_query_generate", {"text": user_msg, "provider": "google_fallback"})
+                    st.caption(f"📚 {rag_res['source']}")
+
+                if rag_text:
+                    st.success(rag_text)
+
+                    budget_range = (profile["budget_profile"]["min"], profile["budget_profile"]["max"])
+                    candidates = [it for it in items if budget_range[0] <= it["price"] <= budget_range[1]]
+                    tops = [it for it in candidates if it.get("category") == "top"]
+                    bottoms = [it for it in candidates if it.get("category") == "bottom"]
+                    shoes = [it for it in candidates if it.get("category") == "shoes"]
+                    accs = [it for it in candidates if it.get("category") == "accessory"]
+
+                    if tops: st.session_state.slots["top"] = random.choice(tops)["id"]
+                    if bottoms: st.session_state.slots["bottom"] = random.choice(bottoms)["id"]
+                    if shoes: st.session_state.slots["shoes"] = random.choice(shoes)["id"]
+                    if accs: st.session_state.slots["accessory"] = random.choice(accs)["id"]
+
+                    st.info(f"✔️ Екіпіровка (слоти) оновлена під поточний стиль '{profile['style_pref']}'")
+                    st.rerun()
+                else:
+                    st.warning("Не вдалося отримати відповідь AI. Перевірте Ollama або увімкніть fallback.")
 
     with tab_dna:
         st.subheader("🧬 Твоє Style DNA")
