@@ -1,6 +1,6 @@
 import json
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Protocol
+from typing import Any, Dict, List, Optional, Protocol, Tuple
 
 from apps.adapters.ollama_adapter import OllamaAdapter
 from apps.core.contracts import AssistantMessage, AssistantResult, Profile, ToolResult
@@ -64,6 +64,9 @@ class InMemorySessionMemory:
 
 
 class PEAROrchestrator:
+    ADAPT_NOTES_LIMIT = 5
+    MAX_MEMORY_CONTEXT_CHARS = 1200
+
     def __init__(
         self,
         ollama_adapter: OllamaAdapter,
@@ -81,12 +84,15 @@ class PEAROrchestrator:
     def handle(self, user_id: str, user_message: str, forced_domain: Optional[str] = None) -> AssistantResult:
         domain = (forced_domain or "").strip().lower() or self.perceive(user_message)
         context = self.enrich(user_id=user_id, domain=domain)
+        adapted_notes = self.adapt(context=context, domain=domain)
+        context["adapted_notes"] = adapted_notes
         act_result = self.act(user_message=user_message, domain=domain, context=context)
         note = self.reflect(
             user_id=user_id,
             user_message=user_message,
             assistant_reply=act_result.final_text,
             domain=domain,
+            preferences_before=context["preferences"],
         )
 
         act_result.notes.append(note)
@@ -118,6 +124,29 @@ class PEAROrchestrator:
             "preferences": preferences,
             "memory_notes": memory_notes,
         }
+
+    def adapt(self, context: Dict[str, Any], domain: str) -> List[Dict[str, Any]]:
+        notes = [self._parse_note(note) for note in context.get("memory_notes", [])]
+        ranked_notes = sorted(
+            notes,
+            key=lambda note: self._note_relevance(note=note, domain=domain),
+            reverse=True,
+        )
+
+        selected: List[Dict[str, Any]] = []
+        total_chars = 0
+        for note in ranked_notes:
+            if len(selected) >= self.ADAPT_NOTES_LIMIT:
+                break
+            compact = self._compact_note(note)
+            compact_size = len(compact)
+            if total_chars + compact_size > self.MAX_MEMORY_CONTEXT_CHARS:
+                continue
+            selected.append(note)
+            total_chars += compact_size
+
+        selected.sort(key=lambda item: item.get("ts", ""))
+        return selected
 
     def act(self, user_message: str, domain: str, context: Dict[str, Any]) -> AssistantResult:
         system_prompt = self._build_system_prompt(domain=domain, context=context)
@@ -170,17 +199,99 @@ class PEAROrchestrator:
             metadata={"step": "single-pass", "tool_call_count": 0},
         )
 
-    def reflect(self, user_id: str, user_message: str, assistant_reply: str, domain: str) -> str:
-        short_user = user_message.strip().replace("\n", " ")[:90]
-        short_reply = assistant_reply.strip().replace("\n", " ")[:90]
-        note = f"{datetime.now(timezone.utc).isoformat()} [{domain}] U:{short_user} | A:{short_reply}"
+    def reflect(
+        self,
+        user_id: str,
+        user_message: str,
+        assistant_reply: str,
+        domain: str,
+        preferences_before: Dict[str, Any],
+    ) -> str:
+        inferred_preferences = self._infer_preferences_from_message(user_message=user_message, domain=domain)
+        preferences_updated: List[str] = []
+
+        if inferred_preferences and hasattr(self.preference_repo, "upsert_preferences"):
+            self.preference_repo.upsert_preferences(user_id=user_id, preferences=inferred_preferences)
+            preferences_updated = sorted(inferred_preferences.keys())
+
+        note_obj = {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "domain": domain,
+            "intent": self._extract_intent(user_message=user_message),
+            "result": self._summarize_execution_result(assistant_reply=assistant_reply),
+            "preferences_updated": preferences_updated,
+            "preferences_before_count": len(preferences_before),
+        }
+        note = self._compact_note(note_obj)
         self.memory.add_note(user_id=user_id, note=note)
         return note
+
+    def _extract_intent(self, user_message: str) -> str:
+        return user_message.strip().replace("\n", " ")[:80]
+
+    def _summarize_execution_result(self, assistant_reply: str) -> str:
+        reply = assistant_reply.strip().lower()
+        weak_signals = ["не знаю", "can't", "cannot", "недостаточно", "уточни", "unknown"]
+        if any(signal in reply for signal in weak_signals):
+            return "what_didnt_work: uncertainty or missing details; what_worked: partial guidance"
+        return "what_worked: actionable answer generated; what_didnt_work: not detected"
+
+    def _infer_preferences_from_message(self, user_message: str, domain: str) -> Dict[str, Any]:
+        text = user_message.lower()
+        updates: Dict[str, Any] = {}
+
+        if domain == "fashion":
+            color_keywords = ["black", "white", "blue", "red", "черн", "бел", "син", "крас"]
+            detected_color = next((word for word in color_keywords if word in text), None)
+            if detected_color:
+                updates["favorite_color_hint"] = detected_color
+
+            budget_digits = "".join(ch for ch in text if ch.isdigit())
+            if budget_digits:
+                updates["budget_hint"] = int(budget_digits)
+
+        if domain == "cinema":
+            if any(word in text for word in ["комед", "comedy"]):
+                updates["genre_hint"] = "comedy"
+            if any(word in text for word in ["драм", "drama"]):
+                updates["genre_hint"] = "drama"
+
+        return updates
+
+    def _parse_note(self, note: str) -> Dict[str, Any]:
+        try:
+            parsed = json.loads(note)
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            pass
+        return {
+            "ts": "",
+            "domain": "general",
+            "intent": note[:80],
+            "result": note[:120],
+            "preferences_updated": [],
+        }
+
+    def _note_relevance(self, note: Dict[str, Any], domain: str) -> Tuple[int, str]:
+        note_domain = str(note.get("domain", "general"))
+        score = 2 if note_domain == domain else 1 if note_domain == "general" else 0
+        return score, str(note.get("ts", ""))
+
+    def _compact_note(self, note: Dict[str, Any]) -> str:
+        compact_note = {
+            "ts": note.get("ts", ""),
+            "domain": note.get("domain", "general"),
+            "intent": str(note.get("intent", ""))[:80],
+            "result": str(note.get("result", ""))[:120],
+            "preferences_updated": list(note.get("preferences_updated", []))[:6],
+        }
+        return json.dumps(compact_note, ensure_ascii=False, separators=(",", ":"))
 
     def _build_system_prompt(self, domain: str, context: Dict[str, Any]) -> str:
         profile: Profile = context["profile"]
         preferences: Dict[str, Any] = context["preferences"]
-        memory_notes: List[str] = context["memory_notes"]
+        adapted_notes: List[Dict[str, Any]] = context.get("adapted_notes", [])
 
         domain_instruction = {
             "fashion": "You are a stylist assistant. Give practical and aesthetic wardrobe advice.",
@@ -193,6 +304,7 @@ class PEAROrchestrator:
             f"User profile: style_preset={profile.style_preset}, budget={profile.budget_min}-{profile.budget_max}, "
             f"theme_color={profile.theme_color}.\n"
             f"User preferences: {json.dumps(preferences, ensure_ascii=False)}\n"
-            f"Recent memory notes: {json.dumps(memory_notes, ensure_ascii=False)}\n"
+            f"Adapted memory notes: {json.dumps(adapted_notes, ensure_ascii=False)}\n"
+            "Keep architecture single-agent and simple; do not introduce multi-agent meta-orchestration in MVP.\n"
             "When tools are available, call them when needed and ground your answer in tool outputs."
         )
