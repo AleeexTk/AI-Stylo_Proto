@@ -26,6 +26,7 @@ from apps.adapters.ollama_adapter import OllamaAdapter, OllamaAdapterError
 from apps.core.ai.orchestrator import PEAROrchestrator
 from apps.core.tools_registry import PreferenceToolRegistry
 from apps.core.contracts import AssistantResult
+from apps.core.tools.registry import LocalToolRegistry
 
 
 DOMAIN_OPTIONS = ["fashion", "cinema"]
