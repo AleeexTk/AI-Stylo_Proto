@@ -46,3 +46,11 @@ See `docs/REPO_BOOTSTRAP.md` for the recommended “Core / Experience / Integrat
 ## Execution roadmap
 
 See `docs/GITHUB_ISSUES.md` for a prioritized issue list that can be copied into GitHub Issues.
+
+## Local Ollama assistant plan (RU)
+
+See `docs/LOCAL_AI_ASSISTANT_PLAN_RU.md` for a detailed architecture, roadmap, risks, testing, and budget for the offline-first Sergey assistant.
+
+## Implementation status and EvoPyramid note (RU)
+
+See `docs/IMPLEMENTATION_STATUS_RU.md` for a repository-based status check and explicit marking that development/testing is done on a minimal necessary EvoPyramid architecture basis for AI-Stylo.
