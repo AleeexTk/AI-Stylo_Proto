@@ -23,6 +23,8 @@ from apps.core.skills_engine import (
     get_visible_skills,
 )
 from apps.adapters.ollama_adapter import OllamaAdapter, OllamaAdapterError
+from apps.core.ai.orchestrator import PEAROrchestrator
+from apps.core.contracts import AssistantResult
 
 USE_GOOGLE_RAG_FALLBACK = os.getenv("USE_GOOGLE_RAG_FALLBACK", "0").lower() in {"1", "true", "yes", "on"}
 
@@ -102,6 +104,19 @@ profile = st.session_state.profile
 @st.cache_resource
 def get_ollama_adapter() -> OllamaAdapter:
     return OllamaAdapter()
+
+
+class _NoopToolRegistry:
+    def tool_schemas(self) -> list[dict]:
+        return []
+
+    def execute(self, tool_name: str, arguments: dict) -> dict:
+        return {"error": f"Tool '{tool_name}' is not registered in UI mode."}
+
+
+@st.cache_resource
+def get_orchestrator() -> PEAROrchestrator:
+    return PEAROrchestrator(ollama_adapter=get_ollama_adapter(), tool_registry=_NoopToolRegistry())
 
 
 def run_ollama_healthcheck() -> tuple[bool, str]:
@@ -360,20 +375,22 @@ with right_col:
                 rag_text = None
 
                 if ollama_available:
-                    messages = [
-                        {
-                            "role": "system",
-                            "content": (
-                                "Ти fashion-стиліст. Відповідай коротко українською та дай практичну пораду."
-                            ),
-                        },
-                        {"role": "user", "content": user_msg},
-                    ]
                     try:
                         with st.spinner("Звертаємось до локального Ollama..."):
-                            response = get_ollama_adapter().chat(messages)
-                        rag_text = response.get("message", {}).get("content", "").strip()
-                        log_event("rag_query_generate", {"text": user_msg, "provider": "ollama"})
+                            assistant_result: AssistantResult = get_orchestrator().handle(
+                                user_id=profile["user_id"],
+                                user_message=user_msg,
+                            )
+                        rag_text = assistant_result.final_text.strip()
+                        log_event(
+                            "rag_query_generate",
+                            {
+                                "text": user_msg,
+                                "provider": "ollama",
+                                "tool_calls": len(assistant_result.tool_outputs),
+                                "orchestrator_step": assistant_result.metadata.get("step", ""),
+                            },
+                        )
                     except OllamaAdapterError as exc:
                         st.error(f"Ollama помилка: {exc}")
 
