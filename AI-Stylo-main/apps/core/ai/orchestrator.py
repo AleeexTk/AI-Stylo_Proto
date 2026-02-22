@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional, Protocol
 
 from apps.adapters.ollama_adapter import OllamaAdapter
 from apps.core.contracts import AssistantMessage, AssistantResult, Profile, ToolResult
+from apps.core.memory import SQLitePreferenceStore, SQLiteProfileStore, SQLiteVectorStore
 
 
 
@@ -73,9 +74,9 @@ class PEAROrchestrator:
     ) -> None:
         self.ollama_adapter = ollama_adapter
         self.tool_registry = tool_registry
-        self.profile_repo = profile_repo or InMemoryProfileRepository()
-        self.preference_repo = preference_repo or InMemoryPreferenceRepository()
-        self.memory = memory or InMemorySessionMemory()
+        self.profile_repo = profile_repo or SQLiteProfileStore()
+        self.preference_repo = preference_repo or SQLitePreferenceStore()
+        self.memory = memory or SQLiteVectorStore()
 
     def handle(self, user_id: str, user_message: str) -> AssistantResult:
         domain = self.perceive(user_message)
