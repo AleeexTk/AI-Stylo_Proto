@@ -74,6 +74,8 @@ class InMemorySessionMemory:
 
 
 class PEAROrchestrator:
+    MAX_TOOL_ROUNDS = 4
+
     def __init__(
         self,
         ollama_adapter: OllamaAdapter,
@@ -139,12 +141,19 @@ class PEAROrchestrator:
         ]
 
         tools = self.tool_registry.tool_schemas()
-        first_response = self.ollama_adapter.chat(messages=messages, tools=tools)
-        assistant_message = first_response.get("message", {})
-        tool_calls = assistant_message.get("tool_calls", []) or []
-
         tool_results: List[Dict[str, Any]] = []
-        if tool_calls:
+        latest_response = self.ollama_adapter.chat(messages=messages, tools=tools)
+
+        for _ in range(self.MAX_TOOL_ROUNDS):
+            assistant_message = latest_response.get("message", {})
+            tool_calls = assistant_message.get("tool_calls", []) or []
+            if not tool_calls:
+                return {
+                    "reply": assistant_message.get("content", ""),
+                    "tool_results": tool_results,
+                    "raw_response": latest_response,
+                }
+
             messages.append(
                 {
                     "role": "assistant",
@@ -165,18 +174,12 @@ class PEAROrchestrator:
                     }
                 )
 
-            second_response = self.ollama_adapter.chat(messages=messages, tools=tools)
-            final_message = second_response.get("message", {})
-            return {
-                "reply": final_message.get("content", ""),
-                "tool_results": tool_results,
-                "raw_response": second_response,
-            }
+            latest_response = self.ollama_adapter.chat(messages=messages, tools=tools)
 
         return {
-            "reply": assistant_message.get("content", ""),
+            "reply": latest_response.get("message", {}).get("content", ""),
             "tool_results": tool_results,
-            "raw_response": first_response,
+            "raw_response": latest_response,
         }
 
     def reflect(self, user_id: str, user_message: str, assistant_reply: str, domain: str) -> str:
