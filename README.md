@@ -2,6 +2,8 @@
 
 AI-Stylo is a fashion recommendation prototype with two UX modes on one core:
 
+> Repository note: the runnable project now lives directly in the repository root (no nested `AI-Stylo-main/` directory).
+
 - **RPG Inventory UI** for B2C engagement (`apps/web/streamlit_rpg/app.py`)
 - **B2B Widget Demo** for partner stores (`apps/web/streamlit_b2b/app.py`)
 

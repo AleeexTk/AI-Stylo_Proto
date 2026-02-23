@@ -1,0 +1,23 @@
+# Python cache and bytecode
+__pycache__/
+*.py[cod]
+
+# Test/cache tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local runtime artifacts
+*.db
+*.sqlite
+*.sqlite3
+
+# macOS/Linux/IDE noise
+.DS_Store
+.idea/
+.vscode/
