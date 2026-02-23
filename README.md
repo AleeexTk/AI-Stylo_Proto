@@ -77,3 +77,7 @@ See `docs/GITHUB_ISSUES.md` for a prioritized issue list that can be copied into
 ## Local Ollama assistant plan (RU)
 
 See `docs/LOCAL_AI_ASSISTANT_PLAN_RU.md` for a detailed architecture, roadmap, risks, testing, and budget for the offline-first Sergey assistant.
+
+## Product notes
+
+- `docs/notes/PRODUCT_DRAFTS_SUMMARY.md` — cleaned summary of archived product brainstorm notes.
