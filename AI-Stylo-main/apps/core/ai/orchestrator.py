@@ -30,6 +30,9 @@ class ToolRegistry(Protocol):
     def tool_schemas(self) -> List[Dict[str, Any]]:
         ...
 
+    def dispatch(self, tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
+        ...
+
     def execute(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         ...
 
@@ -176,7 +179,10 @@ class PEAROrchestrator:
             )
 
             for call in assistant_message.tool_calls:
-                result = self.tool_registry.execute(tool_name=call.name, arguments=call.arguments)
+                if hasattr(self.tool_registry, "dispatch"):
+                    result = self.tool_registry.dispatch(tool_name=call.name, args=call.arguments)
+                else:
+                    result = self.tool_registry.execute(tool_name=call.name, arguments=call.arguments)
                 tool_results.append(ToolResult(tool_name=call.name, arguments=call.arguments, result=result, call_id=call.call_id))
                 messages.append(
                     {

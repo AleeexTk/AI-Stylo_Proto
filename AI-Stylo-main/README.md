@@ -77,3 +77,7 @@ See `docs/GITHUB_ISSUES.md` for a prioritized issue list that can be copied into
 ## Local Ollama assistant plan (RU)
 
 See `docs/LOCAL_AI_ASSISTANT_PLAN_RU.md` for a detailed architecture, roadmap, risks, testing, and budget for the offline-first Sergey assistant.
+
+## Additional reference docs
+
+- `docs/EVOPYRAMID_AI_SELF_DIAGNOSTIC_QUESTIONNAIRE_v1.1.md` — imported AI self-diagnostic questionnaire used as a custom-instructions reference artifact.
