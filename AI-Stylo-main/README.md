@@ -11,6 +11,18 @@ AI-Stylo is a fashion recommendation prototype with two UX modes on one core:
 pip install -r requirements.txt
 ```
 
+## One-click launch from unpacked ZIP
+
+After downloading and unpacking the repository ZIP:
+
+- **Windows:** double-click `start_ai_stylo.bat`
+- **macOS/Linux:** run `./start_ai_stylo.sh`
+
+This opens a local launcher window with one button. The launcher automatically:
+1. creates `.venv` (on first run),
+2. installs dependencies from `requirements.txt`,
+3. starts the Streamlit project interface.
+
 ### One-command runs
 
 ```bash
