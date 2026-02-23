@@ -1,0 +1,42 @@
+name: CI Smoke
+
+on:
+  push:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Detect project root
+        id: project
+        shell: bash
+        run: |
+          if [ -f "Makefile" ] && [ -d "apps" ]; then
+            echo "dir=." >> "$GITHUB_OUTPUT"
+          elif [ -f "AI-Stylo-main/Makefile" ] && [ -d "AI-Stylo-main/apps" ]; then
+            echo "dir=AI-Stylo-main" >> "$GITHUB_OUTPUT"
+          else
+            echo "Cannot detect project root (expected Makefile + apps)."
+            exit 1
+          fi
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest httpx pyyaml
+
+      - name: Lint (smoke)
+        working-directory: ${{ steps.project.outputs.dir }}
+        run: make check
+
+      - name: Run tests
+        working-directory: ${{ steps.project.outputs.dir }}
+        run: pytest -q
