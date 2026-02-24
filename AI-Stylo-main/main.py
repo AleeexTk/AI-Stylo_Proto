@@ -1,6 +1,10 @@
 import sys
 import subprocess
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 from apps.adapters.ollama_adapter import OllamaAdapter, OllamaAdapterError
 
@@ -27,7 +31,7 @@ def main():
 
     # Run streamlit
     try:
-        subprocess.run(["streamlit", "run", str(app_path)], check=True)
+        subprocess.run(["streamlit", "run", str(app_path), "--browser.gatherUsageStats", "false"], check=True)
     except KeyboardInterrupt:
         print("\nShutting down AI-Stylo.")
     except Exception as e:
