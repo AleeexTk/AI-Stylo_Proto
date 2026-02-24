@@ -18,23 +18,10 @@ After downloading and unpacking the repository ZIP:
 - **Windows:** double-click `start_ai_stylo.bat`
 - **macOS/Linux:** run `./start_ai_stylo.sh`
 
-If you run from the outer ZIP root (where `AI-Stylo-main` is nested), use root-level wrapper scripts `../start_ai_stylo.bat` or `../start_ai_stylo.sh`.
-
 This opens a local launcher window with one button. The launcher automatically:
 1. creates `.venv` (on first run),
 2. installs dependencies from `requirements.txt`,
 3. starts the Streamlit project interface.
-
-If GUI/Tkinter is unavailable on your system, use console fallback:
-
-```bash
-python launcher.py --cli
-```
-
-### Windows note (pip missing in venv)
-
-If you see `No module named pip`, the launcher now auto-recovers pip using `ensurepip` (and fallback via `get-pip.py`).
-If this still fails, reinstall Python from the official full installer (not embeddable/minimal build) and re-run launcher.
 
 ### One-command runs
 
@@ -47,6 +34,24 @@ make demo-data
 - `run-rpg` launches the main Streamlit RPG app.
 - `run-b2b` launches the embedded-store demo screen.
 - `demo-data` generates `data/demo_catalog.json` for repeatable local demos.
+
+## Run from unpacked ZIP (one click)
+
+After downloading and unpacking the repository archive, you can start the app without manual setup:
+
+- **Windows:** double-click `start_ai_stylo.bat`
+- **Linux/macOS:** run `./start_ai_stylo.sh`
+
+On first launch the script will:
+1. Create `.venv` inside the project folder
+2. Install dependencies from `requirements.txt`
+3. Auto-start the Streamlit RPG interface
+
+For the B2B demo mode use:
+
+```bash
+./start_ai_stylo_b2b.sh
+```
 
 ## Environment variables
 

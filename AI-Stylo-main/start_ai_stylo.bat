@@ -1,5 +1,7 @@
 @echo off
 setlocal
+
 cd /d "%~dp0"
-python launcher.py
+python scripts\bootstrap_and_run.py --mode rpg
+
 endlocal
