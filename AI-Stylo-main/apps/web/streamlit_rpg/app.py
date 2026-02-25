@@ -33,10 +33,27 @@ DOMAIN_OPTIONS = ["fashion", "cinema"]
 
 USE_GOOGLE_RAG_FALLBACK = os.getenv("USE_GOOGLE_RAG_FALLBACK", "0").lower() in {"1", "true", "yes", "on"}
 
+# CSS Loading
+def local_css(file_name):
+    with open(file_name) as f:
+        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+
+css_path = Path(__file__).parent / "style_cyber.css"
+if css_path.exists():
+    local_css(str(css_path))
+else:
+    # Fallback minimal styling
+    st.markdown("""
+        <style>
+        .main { background-color: #0d0d12; color: #00f3ff; }
+        .stButton>button { border: 1px solid #00f3ff; background: rgba(0,243,255,0.1); color: #00f3ff; }
+        </style>
+    """, unsafe_allow_html=True)
+
 # Настройка страницы
-st.set_page_config(page_title="🧬 Personal Fashion OS | RPG", layout="wide", page_icon="🧬")
-st.title("🧬 Personal Fashion OS")
-st.caption("Твій стиль. Твоя екіпіровка. Як у грі. (Powered by EvoPyramid)")
+st.set_page_config(page_title="🧬 AI-Stylo | Virtual Fitting", layout="wide", page_icon="🧬")
+st.markdown("<h1 style='text-align: center;'>🧬 AI-STYLO: VIRTUAL FITTING</h1>", unsafe_allow_html=True)
+st.caption("EvoPyramid Protocol Active. System Status: NEON_SYNCED.")
 
 # ---------- Модель эмбеддингов ----------
 @st.cache_resource

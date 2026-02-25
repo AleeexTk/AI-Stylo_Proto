@@ -1,0 +1,103 @@
+/* Cyberpunk Style for AI-Stylo */
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Rajdhani:wght@300;500;700&display=swap');
+
+:root {
+    --neon-cyan: #00f3ff;
+    --neon-magenta: #ff00ff;
+    --glass-bg: rgba(20, 20, 30, 0.6);
+    --glass-border: rgba(0, 243, 255, 0.3);
+}
+
+.main {
+    background: linear-gradient(135deg, #0d0d12 0%, #1a1a2e 100%);
+    color: #e0e0e0;
+    font-family: 'Rajdhani', sans-serif;
+}
+
+h1, h2, h3 {
+    font-family: 'Orbitron', sans-serif !important;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--neon-cyan);
+    text-shadow: 0 0 10px rgba(0, 243, 255, 0.5);
+}
+
+/* Glassmorphism Cards */
+div.stButton > button {
+    background-color: var(--glass-bg) !important;
+    border: 1px solid var(--glass-border) !important;
+    color: var(--neon-cyan) !important;
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+    transition: all 0.3s ease;
+    border-radius: 4px;
+    font-weight: bold;
+    text-transform: uppercase;
+}
+
+div.stButton > button:hover {
+    background-color: rgba(0, 243, 255, 0.2) !important;
+    border-color: var(--neon-cyan) !important;
+    box-shadow: 0 0 15px var(--neon-cyan);
+    transform: translateY(-2px);
+}
+
+/* Specific button styles */
+button[key*="sel_"], button[key*="slot_"] {
+    border-radius: 8px !important;
+    height: 60px !important;
+}
+
+/* Container styling */
+[data-testid="stVerticalBlock"] > [data-testid="stVerticalBlock"] {
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    padding: 20px;
+    border-radius: 12px;
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+}
+
+/* Image styling */
+img {
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Custom Nav Bar Simulation */
+.nav-bar {
+    display: flex;
+    justify-content: space-around;
+    padding: 15px;
+    background: rgba(10, 10, 15, 0.9);
+    border-top: 1px solid var(--neon-cyan);
+    position: sticky;
+    bottom: 0;
+    z-index: 100;
+}
+
+.nav-item {
+    text-align: center;
+    color: #888;
+    font-size: 0.8rem;
+    cursor: pointer;
+}
+
+.nav-item.active {
+    color: var(--neon-cyan);
+}
+
+/* HUD elements */
+.hud-text {
+    font-size: 0.7rem;
+    color: var(--neon-cyan);
+    opacity: 0.7;
+    margin-bottom: 2px;
+}
+
+.hud-bar {
+    height: 2px;
+    background: var(--neon-cyan);
+    width: 100%;
+    margin-bottom: 10px;
+}
