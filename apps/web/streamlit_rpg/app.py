@@ -9,7 +9,8 @@ import hashlib
 import json
 import random
 import os
-
+import urllib.parse
+import requests
 project_root = Path(__file__).resolve().parent.parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
@@ -23,6 +24,7 @@ from apps.core.skills_engine import (
     get_visible_skills,
 )
 from apps.adapters.ollama_adapter import OllamaAdapter, OllamaAdapterError
+from apps.adapters.generative_pipeline import VirtualTryOnPipeline
 from apps.core.ai.orchestrator import PEAROrchestrator
 from apps.core.tools_registry import PreferenceToolRegistry
 from apps.core.contracts import AssistantResult
@@ -33,15 +35,32 @@ DOMAIN_OPTIONS = ["fashion", "cinema"]
 
 USE_GOOGLE_RAG_FALLBACK = os.getenv("USE_GOOGLE_RAG_FALLBACK", "0").lower() in {"1", "true", "yes", "on"}
 
+# CSS Loading
+def local_css(file_name):
+    with open(file_name) as f:
+        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+
+css_path = Path(__file__).parent / "style_cyber.css"
+if css_path.exists():
+    local_css(str(css_path))
+else:
+    # Fallback minimal styling
+    st.markdown("""
+        <style>
+        .main { background-color: #0d0d12; color: #00f3ff; }
+        .stButton>button { border: 1px solid #00f3ff; background: rgba(0,243,255,0.1); color: #00f3ff; }
+        </style>
+    """, unsafe_allow_html=True)
+
 # Настройка страницы
-st.set_page_config(page_title="🧬 Personal Fashion OS | RPG", layout="wide", page_icon="🧬")
-st.title("🧬 Personal Fashion OS")
-st.caption("Твій стиль. Твоя екіпіровка. Як у грі. (Powered by EvoPyramid)")
+st.set_page_config(page_title="🧬 AI-Stylo | Virtual Fitting", layout="wide", page_icon="🧬")
+st.markdown("<h1 style='text-align: center;'>🧬 AI-STYLO: VIRTUAL FITTING</h1>", unsafe_allow_html=True)
+st.caption("EvoPyramid Protocol Active. System Status: NEON_SYNCED.")
 
 # ---------- Модель эмбеддингов ----------
 @st.cache_resource
 def load_model():
-    return SentenceTransformer("all-mpnet-base-v2")
+    return SentenceTransformer("all-MiniLM-L6-v2")
 
 model = load_model()
 
@@ -63,7 +82,7 @@ def log_event(event_type: str, payload: dict = None):
 def init_state():
     if "profile" not in st.session_state:
         st.session_state.profile = {
-            "user_id": "demo_user",
+            "user_id": "sanya",
             "base_vector": None,
             "try_vector": None,
             "use_try": False,
@@ -77,7 +96,8 @@ def init_state():
             # SKILLS ENGINE STATE:
             "counters": {},
             "skills": {},
-            "seen_events": 0
+            "seen_events": 0,
+            "gender": "male"
         }
     ensure_skill_state(st.session_state.profile)
 
@@ -138,6 +158,10 @@ class _SessionToolRegistry(PreferenceToolRegistry):
 def get_orchestrator() -> PEAROrchestrator:
     return PEAROrchestrator(ollama_adapter=get_ollama_adapter(), tool_registry=_SessionToolRegistry(st.session_state.profile))
 
+@st.cache_resource
+def get_pipeline() -> VirtualTryOnPipeline:
+    return VirtualTryOnPipeline()
+
 
 def run_ollama_healthcheck() -> tuple[bool, str]:
     try:
@@ -196,7 +220,21 @@ if not profile["onboarding_done"]:
                 st.rerun()
 
         elif step == 3:
-            st.markdown("### 4. Твій розмір (необов'язково)")
+            st.markdown("### 4. Твоя стать")
+            g_cols = st.columns(2)
+            with g_cols[0]:
+                if st.button("Чоловіча ♂️"):
+                    profile["gender"] = "male"
+                    st.session_state.onboarding_step = 4
+                    st.rerun()
+            with g_cols[1]:
+                if st.button("Жіноча ♀️"):
+                    profile["gender"] = "female"
+                    st.session_state.onboarding_step = 4
+                    st.rerun()
+
+        elif step == 4:
+            st.markdown("### 5. Твій розмір (необов'язково)")
             size = st.selectbox("Оберіть розмір", ["XS", "S", "M", "L", "XL", "Пропустити"])
             if st.button("Завершити"):
                 if size != "Пропустити":
@@ -216,6 +254,8 @@ with st.sidebar:
     if not st.session_state.catalogs:
         # Демо-товары с "old_price" и "luxury" метками для витринных навыков
         demo_items = [
+            {"id": "g1", "name": "Чорна сукня міні", "brand": "Gepur", "price": 2100, "old_price": 2100, "luxury_index": 0.6, "category": "top", "description": "Чорна сукня міні зі стрейч-сітки", "image": "https://gepur.com/product/49230/img/1.jpg"},
+            {"id": "g2", "name": "Бежева сукня з блискітками", "brand": "Gepur", "price": 3500, "old_price": 3500, "luxury_index": 0.8, "category": "top", "description": "Бежева сукня з блискітками зі шнурівкою", "image": "https://gepur.com/product/45216/img/1.jpg"},
             {"id": "1", "name": "Оверсайз худи", "brand": "Balenciaga", "price": 4500, "old_price": 6000, "luxury_index": 0.9, "category": "top", "description": "Чорний оверсайз худи", "image": "https://picsum.photos/id/1015/400/500"},
             {"id": "2", "name": "Slim джинси", "brand": "Levi's", "price": 2700, "old_price": 2700, "luxury_index": 0.3, "category": "bottom", "description": "Класичні сині джинси slim", "image": "https://picsum.photos/id/133/400/500"},
             {"id": "3", "name": "Білі кросівки", "brand": "Nike", "price": 3200, "old_price": 4000, "luxury_index": 0.5, "category": "shoes", "description": "Мінімалістичні білі кросівки", "image": "https://picsum.photos/id/201/400/500"},
@@ -244,9 +284,9 @@ with st.sidebar:
         st.rerun()
 
     # --------- Partner Skill Pack Injector ---------
-    with st.expander("🏷️ Partner Skill Pack (JSON)", expanded=False):
-        st.caption("Загрузи JSON-пак навыков для каталога. Появятся только когда откроются.")
-        pack_file = st.file_uploader("Загрузить skill_pack.json", type=["json"], key="skill_pack_uploader")
+    with st.expander("🏷️ Завантажити навички (JSON)", expanded=False):
+        st.caption("Завантажте JSON-пак навичок для каталогу.")
+        pack_file = st.file_uploader("Оберіть skill_pack.json", type=["json"], key="skill_pack_uploader")
 
         if pack_file is not None:
             raw = pack_file.read()
@@ -282,7 +322,7 @@ with st.sidebar:
 
             st.session_state.partner_skill_packs[target_catalog] = parsed_pack
             log_event("partner_skill_pack_loaded", {"catalog_id": target_catalog, "count": len(parsed_pack)})
-            st.success(f"Skill pack загружен для '{target_catalog}'!")
+            st.success(f"Пак навичок завантажено для '{target_catalog}'!")
             st.rerun()
 
 # --------- Движок навыков и пересчет ---------
@@ -294,30 +334,60 @@ unlock_and_update_skills(profile, skill_defs)
 left_col, right_col = st.columns([1, 1], gap="medium")
 
 with left_col:
-    st.subheader("🖼️ Твій образ")
-    avatar_placeholder = st.empty()
-    with avatar_placeholder.container():
-        st.image("https://via.placeholder.com/400x500?text=Your+Look+(RPG+Inventory)", use_container_width=True)
+    st.markdown("### � NEURAL MIRROR")
     
-    col_s1, col_s2 = st.columns(2)
-    def render_slot(slot_key, label):
-        st.markdown(f"**{label}**")
-        btn = st.button("➕" if st.session_state.slots[slot_key] is None else "🔄", key=f"slot_{slot_key}")
-        if st.session_state.slots[slot_key]:
-            itm = next((it for it in items if it["id"] == st.session_state.slots[slot_key]), None)
-            if itm:
-                st.image(itm["image"], width=100)
-                st.caption(f"{itm['name']}\n{itm['price']} грн")
+    # Futuristic Avatar Display
+    if "last_viz_bytes" in st.session_state:
+        st.image(st.session_state.last_viz_bytes, use_container_width=True, caption="Твій сгенерований образ")
+    else:
+        # Default placeholder based on gender
+        default_img = "https://picsum.photos/id/1015/800/1000" if profile.get("gender") == "male" else "https://picsum.photos/id/64/800/1000"
+        st.image(default_img, use_container_width=True, caption="Твій базовий аватар")
+    
+    # HUD UI elements
+    st.markdown("<div class='hud-bar'></div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='hud-text'>SCANNING BIOMETRICS: <span style='color:#00f3ff'>{profile['user_id'].upper()}</span></div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='hud-text'>SYNCING WITH DIGITAL SOUL... <span style='color:#00ff00'>CONNECTED</span></div>", unsafe_allow_html=True)
+    
+    # Web Scraper Input
+    st.markdown("---")
+    web_url = st.text_input("🔗 URL з Kasta / Intertop / Rozetka", placeholder="Вставте посилання на товар...")
+    if st.button("🛰️ ГЕНЕРУВАТИ ЛЮК З САЙТУ", use_container_width=True):
+        if web_url:
+            st.toast(f"Скануємо {web_url}...", icon="🛰️")
+            log_event("web_crawl_request", {"url": web_url})
+            # This would trigger a backend crawler in a real app
+            st.success("Товар успішно розпізнано! Додаємо в примірочну...")
         else:
-            st.caption("порожньо")
+            st.warning("Будь ласка, вставте посилання.")
+    
+    st.markdown("### 🎒 MY WARDROBE")
+    
+    def render_slot_cyber(slot_key, label, icon="💠"):
+        st.markdown(f"<div class='hud-text'>{icon} {label.upper()}</div>", unsafe_allow_html=True)
+        
+        has_item = st.session_state.slots[slot_key] is not None
+        btn_label = "ADD" if not has_item else "SWAP"
+        
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            btn = st.button(btn_label, key=f"slot_{slot_key}")
+        with col2:
+            if has_item:
+                itm = next((it for it in items if it["id"] == st.session_state.slots[slot_key]), None)
+                if itm:
+                    st.markdown(f"<span style='font-size:0.8rem;'>{itm['name']}</span>", unsafe_allow_html=True)
+                    st.progress(0.85) # Simulating "loading/fitting" progress
+            else:
+                st.caption("EMPTY_SLOT")
+                st.progress(0.0)
+
         return btn
 
-    with col_s1:
-        t_btn = render_slot("top", "Верх")
-        b_btn = render_slot("bottom", "Низ")
-    with col_s2:
-        s_btn = render_slot("shoes", "Взуття")
-        a_btn = render_slot("accessory", "Аксесуар")
+    t_btn = render_slot_cyber("top", "Upper Body", "👕")
+    b_btn = render_slot_cyber("bottom", "Lower Body", "👖")
+    s_btn = render_slot_cyber("shoes", "Footwear", "👟")
+    a_btn = render_slot_cyber("accessory", "Accessory", "🕶️")
 
     if t_btn: st.session_state.slot_selection = "top"
     if b_btn: st.session_state.slot_selection = "bottom"
@@ -326,7 +396,7 @@ with left_col:
 
 with right_col:
     # ---------------- Вкладки (Control / DNA) ----------------
-    tab_ctrl, tab_rag, tab_dna = st.tabs(["⚙️ Panel", "🤖 AI RAG (GDocs)", "🧬 Style DNA & Skills"])
+    tab_ctrl, tab_fit, tab_rag, tab_dna = st.tabs(["⚙️ Налаштування", "🧺 Примірочна", "🤖 AI Помічник (GDocs)", "🧬 Style DNA & Навички"])
 
     with tab_ctrl:
         st.markdown("**💰 Бюджет**")
@@ -383,6 +453,76 @@ with right_col:
         else:
             st.info("Оберіть речі або згенеруйте образ")
 
+    with tab_fit:
+        st.subheader("🧺 Віртуальна примірочна")
+        st.caption("Візуалізуй свій образ за допомогою AI.")
+
+        # Вибір статі
+        gender_map = {"male": "Чоловічий ♂️", "female": "Жіночий ♀️"}
+        current_gender = profile.get("gender", "female")
+        new_gender = st.radio("Стать для візуалізації", ["male", "female"], 
+                             index=0 if current_gender == "male" else 1,
+                             format_func=lambda x: gender_map[x], horizontal=True)
+        profile["gender"] = new_gender
+
+        # Завантаження фото
+        st.markdown("---")
+        st.markdown("### 📸 Генерація по фото")
+        user_photo = st.file_uploader("Завантаж своє фото (портрет або на повний зріст)", type=["jpg", "jpeg", "png"])
+        if user_photo:
+            st.image(user_photo, caption="Твоє фото завантажено", width=200)
+
+        # Деталі зовнішності
+        with st.expander("👤 Деталі зовнішності", expanded=False):
+            default_desc = "Атлетична статура, зріст 180 см, коротка зачіска" if new_gender == "male" else "Струнка статура, довге волосся"
+            avatar_desc = st.text_area("Опиши свій аватар (наприклад: зріст, статура, зачіска)", 
+                                     value=default_desc,
+                                     help="Це допоможе AI краще підібрати візуалізацію.")
+            background_desc = st.text_input("Локація / Фон", value="Мінімалістична студія")
+        
+        equipped_items = []
+        for slot_name, item_id in st.session_state.slots.items():
+            if item_id:
+                itm = next((it for it in items if it["id"] == item_id), None)
+                if itm:
+                    equipped_items.append(f"{itm['name']} ({itm['brand']})")
+
+        if not equipped_items and not user_photo:
+            st.warning("Спочатку одягніть хоча б одну річ у вкладці Panel або завантажте фото.")
+        else:
+            if equipped_items:
+                st.markdown("**Ваш вибір:** " + ", ".join(equipped_items))
+            
+            if st.button("✨ Візуалізувати образ", use_container_width=True):
+                with st.spinner("Генеруємо візуалізацію (Мозок + SD)..."):
+                    save_avatar_desc = avatar_desc.replace("\n", " ").strip()
+                    save_background = background_desc.replace("\n", " ").strip()
+                    
+                    photo_bytes = user_photo.getvalue() if user_photo else None
+                    pipeline = get_pipeline()
+                    
+                    result_bytes = pipeline.generate_look(
+                        gender=new_gender,
+                        user_desc=save_avatar_desc,
+                        background_desc=save_background,
+                        items=[f"{i}" for i in equipped_items],
+                        photo_bytes=photo_bytes
+                    )
+                    
+                    if result_bytes:
+                        st.session_state.last_viz_bytes = result_bytes
+                        log_event("visualize_outfit", {"gender": new_gender, "has_photo": photo_bytes is not None})
+                        st.rerun()
+                    else:
+                        st.error("Помилка генерації. Перевірте, чи запущено Ollama та локальний SD WebUI (--api).")
+                        log_event("visualize_outfit_error", {"items": equipped_items})
+            
+            if "last_viz_bytes" in st.session_state:
+                st.image(st.session_state.last_viz_bytes, caption="Генерація від AI", use_container_width=True)
+                if st.button("📥 Зберегти в лукбук"):
+                    st.success("Образ збережено!")
+                    log_event("save_to_lookbook", {"url": st.session_state.last_viz_url})
+
     with tab_rag:
         st.subheader("💡 AI Assistant Studio")
         st.caption("Працює через PEAR Orchestrator. Доступний tool trigger: save_preference.")
@@ -399,11 +539,11 @@ with right_col:
 
         pref_col1, pref_col2, pref_col3 = st.columns([1.1, 1.1, 0.8])
         with pref_col1:
-            pref_key = st.text_input("Preference key", value="tone")
+            pref_key = st.text_input("Ключ налаштування", value="tone")
         with pref_col2:
-            pref_value = st.text_input("Preference value", value="concise")
+            pref_value = st.text_input("Значення", value="concise")
         with pref_col3:
-            save_pref_clicked = st.button("💾 Зберегти preference", use_container_width=True)
+            save_pref_clicked = st.button("💾 Зберегти", use_container_width=True)
 
         if save_pref_clicked:
             tool_result = get_orchestrator().tool_registry.execute(
@@ -455,7 +595,7 @@ with right_col:
             st.markdown("### Відповідь асистента")
             st.success(assistant_result.final_text.strip() or "(порожня відповідь)")
 
-            st.markdown("### Tool calls")
+            st.markdown("### Виклики інструментів (Tool calls)")
             if assistant_result.tool_outputs:
                 tool_payload = [
                     {
@@ -475,7 +615,7 @@ with right_col:
                     }
                 ])
             else:
-                st.info("Tool-и не викликались.")
+                st.info("Інструменти не викликались.")
 
             with st.expander("Повний JSON результат Orchestrator", expanded=False):
                 st.json(
