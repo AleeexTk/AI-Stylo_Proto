@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional
 
 import yaml
 
-from apps.core.contracts import Profile
+from ai_stylo.core.contracts import Profile
 
 
 class SQLiteProfileStore:

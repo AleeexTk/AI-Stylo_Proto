@@ -4,7 +4,7 @@ Body Validator — анализирует результаты GridMapper для
 """
 
 from typing import Dict, List, Any
-from apps.core.ai.grid_mapper import GridResult
+from ai_stylo.core.ai.grid_mapper import GridResult
 
 class BodyValidator:
     """Анализирует GridResult на предмет корректности и пригодности для TryOn."""

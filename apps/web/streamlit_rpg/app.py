@@ -449,6 +449,11 @@ unlock_and_update_skills(profile, skill_defs)
 budget_range = (profile["budget_profile"]["min"], profile["budget_profile"]["max"])
 selected_style = profile.get("style_pref", "casual").capitalize()
 
+# --- Early Side-Effect for Session State ---
+# Need to capture uploader value before columns to ensure display sync
+if "user_photo_bytes" not in st.session_state:
+    st.session_state.user_photo_bytes = None
+
 # ---------- Основная область ----------
 left_col, right_col = st.columns([1, 1], gap="medium")
 
@@ -457,11 +462,16 @@ with left_col:
     
     # Futuristic Avatar Display
     if "last_viz_bytes" in st.session_state:
-        st.image(st.session_state.last_viz_bytes, width="stretch", caption="Твій сгенерований образ")
+        st.image(st.session_state.last_viz_bytes, use_container_width=True, caption="Твій сгенерований образ")
+    elif st.session_state.user_photo_bytes:
+        st.image(st.session_state.user_photo_bytes, use_container_width=True, caption="Твій базовий аватар (Біометрія)")
     else:
-        # Default placeholder based on gender
-        default_img = "https://picsum.photos/id/1015/800/1000" if profile.get("gender") == "male" else "https://picsum.photos/id/64/800/1000"
-        st.image(default_img, width="stretch", caption="Твій базовий аватар")
+        # High-quality fashion placeholders
+        if profile.get("gender") == "male":
+            default_img = "https://images.unsplash.com/photo-1503342217505-b0a15ec3261c?auto=format|fit=crop|q=80|w=800"
+        else:
+            default_img = "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format|fit=crop|q=80|w=800"
+        st.image(default_img, use_container_width=True, caption="Твій базовий аватар (Digital Soul)")
     
     # HUD UI elements
     st.markdown("<div class='hud-bar'></div>", unsafe_allow_html=True)
@@ -487,14 +497,21 @@ with left_col:
         viz_items = list(equipped_items)
 
         with st.status("🛰️ Синхронізація образу...", expanded=True) as status:
+            viz_items = []
+            for slot_name, item_id in st.session_state.slots.items():
+                if item_id:
+                    itm = next((it for it in items if it["id"] == item_id), None)
+                    if itm and itm.get("image"):
+                        viz_items.append(itm["image"])
+
             if custom_g:
                 viz_items = [custom_g] + viz_items
                 st.write(f"🛰️ Syncing custom garment: {custom_g[:30]}...")
 
             res_bytes = pipeline.generate_look(
                 gender=profile.get("gender", "male"),
-                user_desc="Base user profile",
-                background_desc="Futuristic studio",
+                user_desc=f"{selected_style} style, {profile.get('ai_guidance', '')}",
+                background_desc="Cyberpunk fashion studio",
                 items=viz_items,
                 photo_bytes=p_bytes,
                 user_id=profile["user_id"]
@@ -768,7 +785,9 @@ with right_col:
         user_photo = st.file_uploader("Завантаж портрет для Mirror Sync", type=["jpg", "jpeg", "png"])
         if user_photo:
             photo_bytes = user_photo.getvalue()
-            st.session_state.user_photo_bytes = photo_bytes
+            if st.session_state.user_photo_bytes != photo_bytes:
+                st.session_state.user_photo_bytes = photo_bytes
+                st.rerun() # Force re-draw with the new photo at the top
             
             # 🧬 DNA Extraction & HUD
             with st.spinner("🧬 CONDUCTING_THERMAL_SCAN..."):

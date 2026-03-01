@@ -5,7 +5,7 @@ from typing import Optional, Dict, Any, List, Tuple
 from PIL import Image
 import numpy as np
 
-from apps.core.ai.grid_mapper import GridMapper
+from ai_stylo.core.ai.grid_mapper import GridMapper
 
 # Lazy imports for MediaPipe to avoid startup delay
 mp_vision = None

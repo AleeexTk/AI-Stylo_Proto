@@ -1,13 +1,24 @@
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
 from ..models import Product
+from ..scraping.catalog_scraper import CatalogScraper
 from datetime import datetime, timezone
 
 class CatalogService:
     def __init__(self, db: Session):
         self.db = db
+        self._scraper = CatalogScraper()
 
-    def upsert_product(self, product_data: dict) -> Product:
+    def ingest_from_url(self, merchant_id: str, url: str) -> Product:
+        """
+        Ingest a product into the catalog by scraping its URL.
+        B2B Gateway entry point for new products.
+        """
+        product_data = self._scraper.scrape_url(url)
+        product_data["merchant_id"] = merchant_id
+        return self.upsert_product(product_data)
+
+    def upsert_product(self, product_data: Dict[str, Any]) -> Product:
         """
         Create or update a product in the catalog.
         """
@@ -31,10 +42,22 @@ class CatalogService:
         product.url = product_data.get("url", product.url)
         product.description = product_data.get("description", product.description)
         product.category = product_data.get("category", product.category)
-        product.meta_data = product_data.get("metadata", product.meta_data)
+        
+        # Merge metadata
+        current_meta = dict(product.meta_data or {})
+        new_meta = product_data.get("metadata", {})
+        current_meta.update(new_meta)
+        product.meta_data = current_meta
+        
         product.created_at = datetime.now(timezone.utc)
         
-        self.db.commit()
+        try:
+            self.db.commit()
+            self.db.refresh(product)
+        except Exception as e:
+            self.db.rollback()
+            raise e
+            
         return product
 
     def get_products(self, merchant_id: str, category: Optional[str] = None) -> List[Product]:
@@ -48,6 +71,3 @@ class CatalogService:
             Product.merchant_id == merchant_id,
             Product.id == product_id
         ).first()
-
-    def get_all(self, limit: int = 100) -> List[Product]:
-        return self.db.query(Product).limit(limit).all()

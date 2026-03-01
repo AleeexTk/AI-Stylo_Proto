@@ -20,3 +20,6 @@ accelerate>=0.26.0
 # Face Personalization
 mediapipe>=0.10.0
 opencv-python>=4.8.0
+
+# Testing
+pytest>=7.0.0

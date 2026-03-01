@@ -1,9 +1,17 @@
 import uuid
+import time
+import requests
+import io
+import numpy as np
+import cv2
 from sqlalchemy.orm import Session
 from typing import Optional
-from ai_stylo.core.models import TryOnJob
+from ai_stylo.core.models import TryOnJob, Product
 from .cache import TryOnCache
 from .providers.base import TryOnProvider
+from .avatar_extractor import AvatarExtractor
+from ..core.ai.warping_engine import WarpingEngine, CompositeRenderer
+from ..core.ai.size_engine import SizeEngine
 
 class JobStatus:
     PENDING = "pending"
@@ -17,6 +25,10 @@ class TryOnJobManager:
         self.db = db
         self.provider = provider
         self.cache = cache
+        self.extractor = AvatarExtractor()
+        self.warper = WarpingEngine()
+        self.renderer = CompositeRenderer()
+        self.size_engine = SizeEngine()
 
     def create_job(self, merchant_id: str, user_id: str, avatar_url: str, item_url: str, outfit_id: str) -> TryOnJob:
         cache_key = self.cache.get_key(avatar_url, outfit_id)
@@ -51,48 +63,58 @@ class TryOnJobManager:
         self.db.commit()
         return job
 
-    def enrich_job_with_avatar(self, job_id: str, avatar_profile: dict):
-        """Обновление метаданных аватара перед основным рендером (Evo-DNA Sync)."""
-        job = self.db.query(TryOnJob).filter(TryOnJob.id == job_id).first()
-        if job:
-            job.meta_data = {"avatar_profile": avatar_profile}
-            job.status = JobStatus.ANALYSIS
-            job.progress = 0.25
-            self.db.commit()
-
     def process_job(self, job_id: str):
         job = self.db.query(TryOnJob).filter(TryOnJob.id == job_id).first()
         if not job or job.status == JobStatus.COMPLETED:
             return
             
         try:
-            # 1. Если статус PENDING - нужен анализ (STAGE_ANALYSIS: 0.2)
+            # 1. Анализ аватара (STAGE_ANALYSIS)
             if job.status == JobStatus.PENDING:
-                # В B2B здесь может быть вызов AvatarExtractor
+                print(f"[{job_id}] Phase: Analysis...")
+                response = requests.get(job.avatar_url, timeout=10)
+                profile = self.extractor.extract_from_bytes(response.content, user_id=job.user_id)
+                
+                # Sizing Logic Integration
+                product = self.db.query(Product).filter(Product.url == job.item_url).first()
+                product_meta = product.meta_data if product else {"brand": "Generic"}
+                size_suggestion = self.size_engine.suggest_size(profile.dict(), product_meta)
+                
+                job.meta_data = {
+                    "avatar_profile": profile.dict(),
+                    "size_recommendation": size_suggestion
+                }
                 job.status = JobStatus.ANALYSIS
-                job.progress = 0.2
+                job.progress = 0.3
                 self.db.commit()
 
-            # 2. Основная генерация (STAGE_RENDER: 0.8)
+            # 2. Рендеринг (Warp -> Composite)
             if job.status == JobStatus.ANALYSIS:
-                # Построение промпта на основе avatar_profile (если есть)
-                profile = job.meta_data.get("avatar_profile", {})
+                print(f"[{job_id}] Phase: Rendering...")
+                profile_data = job.meta_data.get("avatar_profile", {})
+                landmarks = profile_data.get("keypoints", {})
                 
-                job.status = JobStatus.RENDERING
-                job.progress = 0.5
-                self.db.commit()
+                avatar_resp = requests.get(job.avatar_url, timeout=10)
+                item_resp = requests.get(job.item_url, timeout=10)
                 
-                # Вызов провайдера
-                result_url = self.provider.generate(job.avatar_url, job.item_url)
+                avatar_img = cv2.imdecode(np.frombuffer(avatar_resp.content, np.uint8), cv2.IMREAD_COLOR)
+                item_img = cv2.imdecode(np.frombuffer(item_resp.content, np.uint8), cv2.IMREAD_UNCHANGED)
+                
+                warped = self.warper.warp_item_to_pose(item_img, landmarks, (avatar_img.shape[0], avatar_img.shape[1]))
+                result_img = self.renderer.render(avatar_img, warped)
+                
+                result_path = f"tmp/result_{job_id}.jpg"
+                cv2.imwrite(result_path, result_img)
                 
                 job.status = JobStatus.COMPLETED
-                job.result_url = result_url
+                job.result_url = f"file:///{result_path}"
                 job.progress = 1.0
-                self.cache.set(job.cache_key, result_url)
+                self.cache.set(job.cache_key, job.result_url)
                 
         except Exception as e:
+            print(f"Error processing job {job_id}: {e}")
             job.status = JobStatus.FAILED
             job.error = str(e)
-            job.progress = 0.0 # Error fallback
+            job.progress = 0.0
         
         self.db.commit()

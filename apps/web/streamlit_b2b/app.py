@@ -1,51 +1,79 @@
 import sys
-from pathlib import Path
+import os
 import streamlit as st
+import pandas as pd
+import numpy as np
+from pathlib import Path
+from datetime import datetime
 
+# Path fix
 project_root = Path(__file__).resolve().parent.parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
-from ai_stylo.core.contracts import Item, Profile, Event
-from ai_stylo.adapters.ollama_adapter import OllamaAdapter, OllamaAdapterError
+from ai_stylo.core.database import SessionLocal
+from ai_stylo.core.catalog.service import CatalogService
 
-@st.cache_resource
-def get_ollama_adapter() -> OllamaAdapter:
-    return OllamaAdapter()
+# Initialize DB and Service
+db = SessionLocal()
+catalog = CatalogService(db)
 
+st.set_page_config(page_title="AI-Stylo | Merchant Dashboard", layout="wide")
 
-def ollama_diagnostic_message() -> tuple[bool, str]:
-    try:
-        health = get_ollama_adapter().health()
-        return True, f"✅ Ollama online: {health['models']['chat']}"
-    except OllamaAdapterError as exc:
-        return False, f"⚠️ Ollama недоступний: {exc}"
+st.sidebar.title("🚀 AI-Stylo B2B")
+st.sidebar.caption("v1.1-autumn | Merchant ID: demo_1")
 
+menu = st.sidebar.radio("Navigation", ["Overview", "Product Catalog", "Merchant Integration"])
 
-st.set_page_config(page_title="Personal Fashion OS | B2B Plugin Demo", layout="centered")
-st.title("🛍️ Картка товару (B2B Плагін)")
-
-ollama_ok, ollama_message = ollama_diagnostic_message()
-st.caption(ollama_message)
-if not ollama_ok:
-    st.warning("Локальний Ollama не відповідає. Функції AI можуть бути обмежені.")
-
-st.markdown("### Худи Balenciaga (Демо)")
-st.image("https://picsum.photos/id/1015/400/500", width=300)
-st.write("**Ціна:** 4500 грн")
-
-st.divider()
-st.subheader("Модуль EvoPyramid: Fashion OS")
-st.caption("Цей блок інтегрується на сайт партнера.")
-
-if st.button("✨ Згенерувати образ з цим товаром", type="primary"):
-    st.success("API Виклик в core-layer. Образ підібрано!")
-    cols = st.columns(3)
-    with cols[0]:
-        st.image("https://picsum.photos/id/133/400/500", caption="Джинси Levi's (2700 грн)")
-    with cols[1]:
-        st.image("https://picsum.photos/id/201/400/500", caption="Кросівки Nike (3200 грн)")
-    with cols[2]:
-        st.image("https://picsum.photos/id/660/400/500", caption="Сумка Hermes (9500 грн)")
+if menu == "Overview":
+    st.title("📊 Merchant Analytics Overview")
     
-    st.info("Бюджет враховано. Taste Stability використано.")
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total Try-Ons", "1,284", "+15%")
+    col2.metric("Size Recs Confidence", "89%", "+2%")
+    col3.metric("Conversion Uplift", "24.5%", "+3.2%")
+    
+    st.markdown("### Conversion Trend")
+    chart_data = pd.DataFrame(np.random.randn(20, 2), columns=["Direct", "AI-Assisted"])
+    st.line_chart(chart_data)
+
+elif menu == "Product Catalog":
+    st.title("📦 Catalog Management")
+    
+    with st.expander("Import New Product from URL", expanded=True):
+        prod_url = st.text_input("Product URL", placeholder="https://store.com/products/item-123")
+        if st.button("Ingest with AI-Stylo"):
+            try:
+                product = catalog.ingest_from_url("demo_1", prod_url)
+                st.success(f"✅ Product '{product.title}' ingested and analyzed!")
+                st.json(product.meta_data)
+            except Exception as e:
+                st.error(f"Ingestion failed: {e}")
+
+    st.divider()
+    st.subheader("Your Products")
+    prods = catalog.get_products("demo_1")
+    if prods:
+        df = pd.DataFrame([{
+            "SKU": p.id,
+            "Brand": p.brand,
+            "Title": p.title,
+            "Price": f"{p.price} {p.currency}",
+            "Category": p.category
+        } for p in prods])
+        st.table(df)
+    else:
+        st.info("No products ingested yet.")
+
+elif menu == "Merchant Integration":
+    st.title("🔌 Integration Center")
+    st.info("Copy and paste the snippet below before the closing </body> tag of your product page.")
+    
+    sdk_path = "ai_stylo/web_widget/sdk.js"
+    st.code(f"""<!-- AI-Stylo Widget -->
+<script src="https://cdn.ai-stylo.com/sdk.js?merchant_id=demo_1"></script>""", language="html")
+    
+    st.markdown("### Preview")
+    st.caption("How the widget button looks on your site:")
+    st.image("https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=300")
+    st.button("✨ Virtual Try-On", disabled=True)

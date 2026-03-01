@@ -2,9 +2,9 @@ import json
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Protocol, Tuple
 
-from apps.adapters.ollama_adapter import OllamaAdapter
-from apps.core.contracts import AssistantMessage, AssistantResult, Profile, ToolResult
-from apps.core.memory import SQLitePreferenceStore, SQLiteProfileStore, SQLiteVectorStore
+from ai_stylo.adapters.ollama_adapter import OllamaAdapter
+from ai_stylo.core.contracts import AssistantMessage, AssistantResult, Profile, ToolResult
+from ai_stylo.core.memory import SQLitePreferenceStore, SQLiteProfileStore, SQLiteVectorStore
 
 
 

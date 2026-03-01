@@ -10,10 +10,10 @@ project_root = Path(__file__).resolve().parent.parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
-from apps.core.ai.size_engine import SizeEngine
-from apps.core.ai.warping_engine import WarpingEngine
-from apps.core.scraping.catalog_scraper import CatalogScraper
-from apps.adapters.generative_pipeline import VirtualTryOnPipeline
+from ai_stylo.core.ai.size_engine import SizeEngine
+from ai_stylo.core.ai.warping_engine import WarpingEngine
+from ai_stylo.core.scraping.catalog_scraper import CatalogScraper
+from ai_stylo.adapters.generative_pipeline import VirtualTryOnPipeline
 
 class TestB2BPipeline(unittest.TestCase):
     """

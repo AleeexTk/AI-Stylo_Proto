@@ -1,7 +1,7 @@
 PYTHON ?= python
 STREAMLIT ?= streamlit
 
-.PHONY: run-rpg run-b2b demo-data check
+.PHONY: run-rpg run-b2b demo-data check test-smoke
 
 run-rpg:
 	$(PYTHON) main.py
@@ -13,4 +13,7 @@ demo-data:
 	$(PYTHON) scripts/demo_data.py
 
 check:
-	$(PYTHON) -m py_compile main.py apps/core/contracts.py apps/core/skills_engine.py apps/web/streamlit_rpg/app.py apps/web/streamlit_b2b/app.py
+	$(PYTHON) -m py_compile main.py ai_stylo/core/*.py apps/web/streamlit_rpg/*.py apps/web/streamlit_b2b/*.py
+
+test-smoke:
+	$(PYTHON) -m pytest tests/test_smoke.py -v

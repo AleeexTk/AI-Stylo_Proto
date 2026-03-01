@@ -6,7 +6,7 @@ Grid Mapper — проецирует pose keypoints (MediaPipe/простые) �
   BACKGROUND, HEAD, TORSO, L_ARM, R_ARM, L_LEG, R_LEG, UNKNOWN
 
 Использование:
-    from apps.core.ai.grid_mapper import GridMapper
+    from ai_stylo.core.ai.grid_mapper import GridMapper
 
     gm = GridMapper()
     result = gm.map(keypoints, image_w=480, image_h=640)

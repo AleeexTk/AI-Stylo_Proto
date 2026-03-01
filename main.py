@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
-from apps.adapters.ollama_adapter import OllamaAdapter, OllamaAdapterError
+from ai_stylo.adapters.ollama_adapter import OllamaAdapter, OllamaAdapterError
 
 def main():
     """Point of entry for AI-Stylo. Resolves path and launches streamlit app."""

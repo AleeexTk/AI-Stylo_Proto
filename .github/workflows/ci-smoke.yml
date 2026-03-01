@@ -2,7 +2,9 @@ name: CI Smoke
 
 on:
   push:
+    branches: [ main, master ]
   pull_request:
+    branches: [ main, master ]
 
 jobs:
   smoke:
@@ -15,20 +17,21 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip' # built-in caching
 
-      - name: Install test dependencies
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1-mesa-glx
+
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest httpx pyyaml \
-            streamlit>=1.40.0 \
-            sentence-transformers>=2.2.0 \
-            pillow requests pandas numpy \
-            python-dotenv pydantic>=2.5.0 \
-            beautifulsoup4 scikit-learn \
-            fastapi sqlalchemy uvicorn
+          # Install core requirements, skip heavy AI if needed but for smoke we want consistency
+          pip install -r requirements.txt
 
-      - name: Lint (smoke)
+      - name: Lint (Syntax check)
         run: make check
 
-      - name: Run tests
-        run: pytest -q
+      - name: Run Smoke Tests
+        run: python -m pytest tests/test_smoke.py -v
