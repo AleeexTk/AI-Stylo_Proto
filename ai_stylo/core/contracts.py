@@ -32,6 +32,11 @@ class Profile:
     creativity_level: float = 0.5
     tone_preference: str = "balanced"
     preferred_aesthetics: List[str] = field(default_factory=list)
+    # DNA / Anthropometry
+    gender: str = "male"
+    body_type: str = "rectangular"
+    measurements: Dict[str, float] = field(default_factory=dict)
+    meta_data: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

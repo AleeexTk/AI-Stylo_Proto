@@ -845,132 +845,102 @@ with right_col:
         st.info("💡 Основна кнопка генерації знаходиться під Дзеркалом зліва.")
 
     with tab_rag:
-        st.subheader("💡 AI Assistant Studio")
-        st.caption("Працює через PEAR Orchestrator. Доступний tool trigger: save_preference.")
-        st.caption(f"Health: {ollama_status_message}")
-
-        st.session_state.assistant_domain = st.radio(
-            "Домен",
-            DOMAIN_OPTIONS,
-            index=DOMAIN_OPTIONS.index(st.session_state.assistant_domain) if st.session_state.assistant_domain in DOMAIN_OPTIONS else 0,
-            horizontal=True,
-        )
-        prompt_placeholder = "Наприклад: підбери образ для офісу" if st.session_state.assistant_domain == "fashion" else "Наприклад: порадь фільм на вечір"
-        user_msg = st.text_input("Поле запиту", placeholder=prompt_placeholder)
-
-        pref_col1, pref_col2, pref_col3 = st.columns([1.1, 1.1, 0.8])
-        with pref_col1:
-            pref_key = st.text_input("Ключ налаштування", value="tone")
-        with pref_col2:
-            pref_value = st.text_input("Значення", value="concise")
-        with pref_col3:
-            save_pref_clicked = st.button("💾 Зберегти", width="stretch")
-
-        if save_pref_clicked:
-            tool_result = get_orchestrator().tool_registry.execute(
-                "save_preference",
-                {
-                    "domain": st.session_state.assistant_domain,
-                    "key": pref_key,
-                    "value": pref_value,
-                },
-            )
-            st.session_state.assistant_result = AssistantResult(
-                final_text="Preference saved via explicit save_preference trigger.",
-                tool_outputs=[],
-                metadata={"manual_tool_trigger": "save_preference", "tool_result": tool_result},
-            )
-            if tool_result.get("ok"):
-                st.success("Preference збережено")
+        st.markdown("## ⚡ Event-Driven AI Stylist")
+        st.caption("EvoPyramid Protocol: READY-TO-EVENT Loop Active")
+        
+        event_input = st.text_input("💎 Яка подія?", placeholder="Наприклад: весілля друзів у стилі бохо, +20°C")
+        
+        if st.button("🚀 ВІЗУАЛІЗУВАТИ ОБРАЗ", use_container_width=True):
+            if not event_input.strip():
+                st.warning("Будь ласка, вкажи подію.")
             else:
-                st.error(f"Не вдалося зберегти preference: {tool_result.get('error', 'unknown error')}")
-
-        if st.button("Запитати AI", width="stretch"):
-            if user_msg.strip():
-                if not ollama_ready:
-                    # Simulation mode
-                    with st.spinner("Симулюємо відповідь (Digital Soul Mode)..."):
-                        time.sleep(1.5)
-                        responses = [
-                            f"Аналізуючи твій стиль ({profile['style_pref']}), я рекомендую звернути увагу на контрастні аксесуари.",
-                            "Твій вибір кольору свідчить про впевненість. Образ для офісу буде ідеальним з цим худі.",
-                            "Я бачу, що ти віддаєш перевагу комфорту. Можливо, додамо кросівки до цього луку?",
-                            f"Для події '{selected_style}' я б порадив додати трохи люксових елементів з твого гардеробу."
-                        ]
-                        st.session_state.assistant_result = AssistantResult(
-                            final_text=random.choice(responses),
-                            tool_outputs=[],
-                            metadata={"simulation": True}
-                        )
-                else:
+                # Execution Pipeline with Feedback
+                with st.status("🧠 AI DECISION ENGINE: WORKING...", expanded=True) as status:
+                    st.write("🔍 [PERCEIVE] Аналіз типу події...")
+                    time.sleep(0.6)
+                    
+                    st.write("🛰️ [ENRICH] Отримання контексту (Погода/Локація)...")
+                    time.sleep(0.4)
+                    
+                    st.write("🧬 [DNA_FILTER] Застосування біометричних обмежень...")
+                    time.sleep(0.7)
+                    
+                    st.write("💾 [MEMORY_GATE] Синхронизація з Digital Soul (минулі вподобання)...")
+                    time.sleep(0.5)
+                    
+                    st.write("👕 [LOOK_GEN] Збірка фінального комплекту...")
+                    
                     try:
-                        with st.spinner("Звертаємось до Orchestrator..."):
-                            assistant_result: AssistantResult = get_orchestrator().handle(
-                                user_id=profile["user_id"],
-                                user_message=user_msg,
-                                forced_domain=st.session_state.assistant_domain,
-                            )
-                        st.session_state.assistant_result = assistant_result
-                        log_event(
-                            "rag_query_generate",
-                            {
-                                "text": user_msg,
-                                "provider": "ollama",
-                                "domain": st.session_state.assistant_domain,
-                                "tool_calls": len(assistant_result.tool_outputs),
-                                "orchestrator_step": assistant_result.metadata.get("step", ""),
-                            },
+                        assistant_result: AssistantResult = get_orchestrator().handle(
+                            user_id=profile["user_id"],
+                            user_message=event_input,
+                            forced_domain="fashion"
                         )
-                    except Exception as exc:
-                        st.error(f"AI помилка: {exc}")
+                        st.session_state.assistant_result = assistant_result
+                        status.update(label="✅ ОБРАЗ СФОРМОВАНО", state="complete")
+                    except Exception as e:
+                        st.error(f"Помилка при збірці образу: {e}")
+                        status.update(label="❌ ПОМИЛКА", state="error")
 
-        assistant_result = st.session_state.assistant_result
-        if assistant_result:
-            st.markdown("### Відповідь асистента")
-            st.success(assistant_result.final_text.strip() or "(порожня відповідь)")
+        # Display Result
+        res = st.session_state.assistant_result
+        if res:
+            st.markdown("---")
+            st.subheader(f"👔 Твій Look: {res.metadata.get('event_type','general').upper()}")
+            
+            trace = res.metadata.get("trace", {})
+            st.success(res.final_text)
 
-            st.markdown("### Виклики інструментів (Tool calls)")
-            if assistant_result.tool_outputs:
-                tool_payload = [
-                    {
-                        "tool": out.tool_name,
-                        "arguments": out.arguments,
-                        "result": out.result,
-                        "call_id": out.call_id,
-                    }
-                    for out in assistant_result.tool_outputs
-                ]
-                st.json(tool_payload)
-            elif assistant_result.metadata.get("manual_tool_trigger"):
-                st.json([
-                    {
-                        "tool": assistant_result.metadata["manual_tool_trigger"],
-                        "result": assistant_result.metadata.get("tool_result", {}),
-                    }
-                ])
-            else:
-                st.info("Інструменти не викликались.")
+            with st.expander("� [AI SYSTEM TRACE] - Аналітика рішення", expanded=True):
+                st.markdown("### 1. PERCEIVE & ENRICH")
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.json({
+                        "event": trace.get("perceive", {}).get("event"),
+                        "dresscode": trace.get("perceive", {}).get("dresscode"),
+                        "vibe": trace.get("perceive", {}).get("vibe")
+                    })
+                with col2:
+                    st.json(res.metadata.get("external_context", {}))
+                
+                st.markdown("### 2. STYLE DNA & MEMORY GATE")
+                col3, col4 = st.columns(2)
+                with col3:
+                    st.json(trace.get("dna", {}))
+                with col4:
+                    memory_trace = trace.get("memory", {})
+                    st.json({
+                        "hard_blocks": memory_trace.get("hard_blocks"),
+                        "soft_prefs_count": len(memory_trace.get("soft_prefs", []))
+                    })
+                    
+                if memory_trace.get("hard_blocks"):
+                    st.warning(f"⚠️ Пам'ять заблокувала елементи: {', '.join(memory_trace['hard_blocks'])}")
 
-            with st.expander("Повний JSON результат Orchestrator", expanded=False):
-                st.json(
-                    {
-                        "final_text": assistant_result.final_text,
-                        "tool_outputs": assistant_result.tool_results,
-                        "notes": assistant_result.notes,
-                        "metadata": assistant_result.metadata,
-                    }
-                )
+                st.markdown("### 3. REASONING LOG")
+                st.json(res.notes)
 
     with tab_dna:
-        st.subheader("🧬 Твоє Style DNA")
-        st.write("Тут будет график или статика из эмбеддингов")
+        st.subheader("🧬 Digital Soul & Style DNA")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("### Біометрія")
+            st.write(f"**Стать:** {profile.get('gender', 'male')}")
+            st.write(f"**Тип фігури:** {profile.get('body_type', 'rectangular')}")
+            # Measurements radar chart placeholder could go here
+        
+        with col2:
+            st.markdown("### Вподобання")
+            st.write(f"**Базовий стиль:** {profile.get('style_preset', 'casual')}")
+            st.write(f"**Палітра:** {profile.get('theme_color', '#4A90E2')}")
 
         st.divider()
-        st.subheader("🎮 Навыки (твій індивідуальний стек)")
+        st.subheader("🎮 Прогрес Навичок")
         visible = get_visible_skills(profile, min_progress=0.01)
 
         if not visible:
-            st.info("Навик відкриються автоматично. Продовжуй збирати образи та купувати.")
+            st.info("Навик відкриються автоматично при використанні AI Stylist.")
         else:
             cols = st.columns(2)
             for i, sk in enumerate(visible):

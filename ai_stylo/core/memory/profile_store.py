@@ -44,6 +44,9 @@ class SQLiteProfileStore:
                     creativity_level REAL NOT NULL,
                     tone_preference TEXT NOT NULL,
                     preferred_aesthetics_json TEXT NOT NULL,
+                    gender TEXT NOT NULL DEFAULT 'male',
+                    body_type TEXT NOT NULL DEFAULT 'rectangular',
+                    measurements_json TEXT NOT NULL DEFAULT '{}',
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
@@ -90,6 +93,9 @@ class SQLiteProfileStore:
             creativity_level=row["creativity_level"],
             tone_preference=row["tone_preference"],
             preferred_aesthetics=json.loads(row["preferred_aesthetics_json"]),
+            gender=row["gender"],
+            body_type=row["body_type"],
+            measurements=json.loads(row["measurements_json"]),
         )
 
     def upsert_profile(self, profile: Profile) -> None:
@@ -100,8 +106,8 @@ class SQLiteProfileStore:
                     user_id, theme_color, style_preset, budget_min, budget_max,
                     affinities_json, counters_json, skills_json, seen_events,
                     similarity_history_json, creativity_level, tone_preference,
-                    preferred_aesthetics_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    preferred_aesthetics_json, gender, body_type, measurements_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(user_id) DO UPDATE SET
                     theme_color=excluded.theme_color,
                     style_preset=excluded.style_preset,
@@ -115,6 +121,9 @@ class SQLiteProfileStore:
                     creativity_level=excluded.creativity_level,
                     tone_preference=excluded.tone_preference,
                     preferred_aesthetics_json=excluded.preferred_aesthetics_json,
+                    gender=excluded.gender,
+                    body_type=excluded.body_type,
+                    measurements_json=excluded.measurements_json,
                     updated_at=CURRENT_TIMESTAMP
                 """,
                 (
@@ -131,6 +140,9 @@ class SQLiteProfileStore:
                     profile.creativity_level,
                     profile.tone_preference,
                     json.dumps(profile.preferred_aesthetics, ensure_ascii=False),
+                    profile.gender,
+                    profile.body_type,
+                    json.dumps(profile.measurements, ensure_ascii=False),
                 ),
             )
 
