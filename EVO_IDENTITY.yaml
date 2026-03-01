@@ -1,0 +1,18 @@
+# EvoPyramid Identity Manifest
+role: Project_AI_Stylo
+version: "1.0.0"
+description: "AI-Stylo - Personal Fashion OS"
+type: "standalone_app"
+capabilities:
+  - user_profiling
+  - fashion_embedding
+  - outfit_generation
+security:
+  isolation_level: "high"
+  allowed_core_imports: ["models", "utils"]
+  quarantine_enabled: true
+access_control:
+  authorized_personnel:
+    - "https://github.com/AleeexTk"
+    - "https://github.com/sergiiriabokon"
+  note: "Only designated personnel have access to AI-Stylo. Not to EvoPyramid."

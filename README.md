@@ -1,0 +1,83 @@
+# 🧬 AI-Stylo Core: Personal Fashion OS
+
+AI-Stylo is a fashion recommendation prototype with two UX modes on one core:
+
+- **RPG Inventory UI** for B2C engagement (`apps/web/streamlit_rpg/app.py`)
+- **B2B Widget Demo** for partner stores (`apps/web/streamlit_b2b/app.py`)
+
+## Quick start
+
+```bash
+pip install -r requirements.txt
+```
+
+### One-command runs
+
+```bash
+make run-rpg
+make run-b2b
+make demo-data
+```
+
+- `run-rpg` launches the main Streamlit RPG app.
+- `run-b2b` launches the embedded-store demo screen.
+- `demo-data` generates `data/demo_catalog.json` for repeatable local demos.
+
+## Environment variables
+
+```bash
+# Ollama connection
+export OLLAMA_BASE_URL=http://localhost:11434
+export OLLAMA_CHAT_MODEL=llama3
+export OLLAMA_EMBED_MODEL=nomic-embed-text
+export OLLAMA_TIMEOUT=30
+
+# Optional: allow legacy Google RAG fallback when Ollama is unavailable
+export USE_GOOGLE_RAG_FALLBACK=0
+```
+
+## Local run example (Ollama-first)
+
+```bash
+# 1) Start Ollama and pull models once
+ollama serve
+ollama pull llama3
+ollama pull nomic-embed-text
+
+# 2) Run app
+python main.py
+# or
+streamlit run apps/web/streamlit_rpg/app.py
+```
+
+## Current repo layout
+
+```text
+apps/
+  core/
+    contracts.py
+    skills_engine.py
+  adapters/
+    google_ai_adapter.py
+  web/
+    streamlit_rpg/app.py
+    streamlit_b2b/app.py
+scripts/
+  demo_data.py
+```
+
+## Product architecture (target)
+
+See `docs/REPO_BOOTSTRAP.md` for the recommended “Core / Experience / Integration / Growth” structure and rollout sequence.
+
+## Execution roadmap
+
+See `docs/GITHUB_ISSUES.md` for a prioritized issue list that can be copied into GitHub Issues.
+
+## Local Ollama assistant plan (RU)
+
+See `docs/LOCAL_AI_ASSISTANT_PLAN_RU.md` for a detailed architecture, roadmap, risks, testing, and budget for the offline-first Sergey assistant.
+
+## Additional reference docs
+
+- `docs/EVOPYRAMID_AI_SELF_DIAGNOSTIC_QUESTIONNAIRE_v1.1.md` — imported AI self-diagnostic questionnaire used as a custom-instructions reference artifact.

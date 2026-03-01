@@ -1,0 +1,110 @@
+[
+    {
+        "scenario_id": 1,
+        "steps": [
+            "change_style",
+            "reset_profile",
+            "change_budget",
+            "change_gender"
+        ],
+        "status": "planned"
+    },
+    {
+        "scenario_id": 2,
+        "steps": [
+            "reset_profile",
+            "change_style",
+            "select_item",
+            "change_gender"
+        ],
+        "status": "planned"
+    },
+    {
+        "scenario_id": 3,
+        "steps": [
+            "ai_query",
+            "generate_viz",
+            "change_style",
+            "select_item",
+            "change_style",
+            "select_item",
+            "change_gender"
+        ],
+        "status": "planned"
+    },
+    {
+        "scenario_id": 4,
+        "steps": [
+            "select_item",
+            "change_style",
+            "reset_profile",
+            "change_style",
+            "reset_profile",
+            "upload_photo",
+            "select_item"
+        ],
+        "status": "planned"
+    },
+    {
+        "scenario_id": 5,
+        "steps": [
+            "save_lookbook",
+            "select_item",
+            "upload_photo",
+            "ai_query",
+            "check_skills",
+            "reset_profile"
+        ],
+        "status": "planned"
+    },
+    {
+        "scenario_id": 6,
+        "steps": [
+            "ai_query",
+            "upload_photo",
+            "check_skills",
+            "select_item"
+        ],
+        "status": "planned"
+    },
+    {
+        "scenario_id": 7,
+        "steps": [
+            "select_item",
+            "generate_viz",
+            "select_item"
+        ],
+        "status": "planned"
+    },
+    {
+        "scenario_id": 8,
+        "steps": [
+            "reset_profile",
+            "check_skills",
+            "check_skills"
+        ],
+        "status": "planned"
+    },
+    {
+        "scenario_id": 9,
+        "steps": [
+            "upload_photo",
+            "ai_query",
+            "select_item",
+            "generate_viz"
+        ],
+        "status": "planned"
+    },
+    {
+        "scenario_id": 10,
+        "steps": [
+            "change_style",
+            "select_item",
+            "change_budget",
+            "change_budget",
+            "save_lookbook",
+            "generate_viz"
+        ],
+        "status": "planned"
+    }
+]

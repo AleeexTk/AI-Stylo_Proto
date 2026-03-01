@@ -1,0 +1,153 @@
+/* Cyberpunk Style for AI-Stylo - Premium Evolution */
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;400;500;600;700&family=Source+Code+Pro:wght@300;400;600&display=swap');
+
+:root {
+    --neon-cyan: #00f3ff;
+    --neon-magenta: #ff00ff;
+    --neon-yellow: #fcee0a;
+    --dark-bg: #0d0d12;
+    --glass-bg: rgba(13, 13, 18, 0.7);
+    --glass-border: rgba(0, 243, 255, 0.25);
+    --panel-shadow: 0 0 20px rgba(0, 243, 255, 0.1);
+}
+
+.main {
+    background: linear-gradient(180deg, #0d0d12 0%, #171725 100%);
+    color: #e0f2f1;
+    font-family: 'Rajdhani', sans-serif;
+}
+
+/* Background Scanline Effect */
+.main::before {
+    content: " ";
+    display: block;
+    position: fixed;
+    top: 0; left: 0; bottom: 0; right: 0;
+    background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+    z-index: 2;
+    background-size: 100% 4px, 3px 100%;
+    pointer-events: none;
+    opacity: 0.15;
+}
+
+h1, h2, h3 {
+    font-family: 'Orbitron', sans-serif !important;
+    text-transform: uppercase;
+    letter-spacing: 3px;
+    color: var(--neon-cyan);
+    text-shadow: 0 0 15px rgba(0, 243, 255, 0.6);
+    margin-bottom: 20px !important;
+}
+
+@keyframes pulse-neon {
+    0% { opacity: 0.8; text-shadow: 0 0 10px var(--neon-cyan); }
+    50% { opacity: 1; text-shadow: 0 0 25px var(--neon-cyan), 0 0 35px var(--neon-cyan); }
+    100% { opacity: 0.8; text-shadow: 0 0 10px var(--neon-cyan); }
+}
+
+h1 {
+    animation: pulse-neon 4s infinite ease-in-out;
+}
+
+/* Glassmorphism Panels */
+[data-testid="stVerticalBlock"] > [data-testid="stVerticalBlock"] {
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    padding: 24px;
+    border-radius: 4px;
+    box-shadow: var(--panel-shadow);
+    -webkit-backdrop-filter: blur(15px);
+    backdrop-filter: blur(15px);
+    position: relative;
+    overflow: hidden;
+}
+
+/* Cyber-Corner Decoration */
+[data-testid="stVerticalBlock"] > [data-testid="stVerticalBlock"]::after {
+    content: "";
+    position: absolute;
+    top: 0; right: 0;
+    width: 20px; height: 20px;
+    background: linear-gradient(45deg, transparent 50%, var(--neon-cyan) 50%);
+}
+
+/* Premium Buttons */
+div.stButton > button {
+    background-color: rgba(0, 243, 255, 0.05) !important;
+    border: 1px solid var(--glass-border) !important;
+    color: var(--neon-cyan) !important;
+    font-family: 'Orbitron', sans-serif !important;
+    font-size: 0.85rem !important;
+    letter-spacing: 1px;
+    padding: 10px 24px !important;
+    border-radius: 2px !important;
+    transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    text-transform: uppercase;
+    clip-path: polygon(10% 0, 100% 0, 100% 70%, 90% 100%, 0 100%, 0% 30%);
+}
+
+div.stButton > button:hover {
+    background-color: var(--neon-cyan) !important;
+    color: var(--dark-bg) !important;
+    box-shadow: 0 0 25px var(--neon-cyan);
+    transform: scale(1.02);
+    border-color: var(--neon-cyan) !important;
+}
+
+/* Primary Visualization Button */
+[data-testid="stBaseButton-primary"] {
+    border: 2px solid var(--neon-cyan) !important;
+    background: rgba(0, 243, 255, 0.15) !important;
+}
+
+/* Image Presentation */
+img {
+    border-radius: 4px;
+    border: 1px solid var(--glass-border);
+    transition: transform 0.3s ease;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+}
+
+img:hover {
+    transform: scale(1.01);
+    border-color: var(--neon-cyan);
+}
+
+/* Scrollbar Customization */
+::-webkit-scrollbar {
+    width: 6px;
+}
+::-webkit-scrollbar-track {
+    background: var(--dark-bg);
+}
+::-webkit-scrollbar-thumb {
+    background: var(--neon-cyan);
+    border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: var(--neon-magenta);
+}
+
+/* HUD elements */
+.hud-text {
+    font-family: 'Source Code Pro', monospace;
+    font-size: 0.75rem;
+    color: var(--neon-cyan);
+    text-transform: uppercase;
+    margin-bottom: 5px;
+}
+
+.hud-progress {
+    height: 4px;
+    background: rgba(0, 243, 255, 0.1);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-bottom: 15px;
+}
+
+.hud-progress-fill {
+    height: 100%;
+    background: var(--neon-cyan);
+    box-shadow: 0 0 10px var(--neon-cyan);
+    width: 65%; /* Simulation */
+}

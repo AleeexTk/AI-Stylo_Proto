@@ -1,0 +1,525 @@
+Да — это прям то, что превращает “виджет рекомендаций” в **игровую систему прогресса** и одновременно даёт **коммерческую аналитику**.
+
+Ниже — набор метрик, которые можно добавить **поверх твоего текущего ядра** (FashionDNA + brand_affinities + budget_profile + similarity_history + events) в абсолютной версии , без тяжелого ML.
+
+---
+
+## 1) Набор “метрик игрока” (что показываем пользователю)
+
+### 🎖 Уровень стиля (Style Level)
+
+**Смысл:** “ты прокачал вкус / насмотренность”.
+
+* Счётчик XP растёт за действия: свайпы, добавления в вишлист, покупки образов, стабильные запросы.
+* Level = `1 + XP // 100` (пример).
+
+**XP за события**
+
+* swipe_like: +2
+* wishlist_add: +3
+* generate_outfits: +5
+* buy_outfit: +20
+* query (чат): +1
+
+### 🧠 Постоянство вкуса (Taste Stability)
+
+У тебя уже есть `similarity_history` и `stability_percent()` — это идеальная “стата”.
+
+* Показывай как “Стабільність стилю: 0–100%”.
+* Плюс: бейджи
+
+  * 0–35% “Експериментатор”
+  * 36–70% “Вирівняний стиль”
+  * 71–100% “Стабільний смак”
+
+### 👑 Люксовость (Luxury Index)
+
+**Смысл:** пользователь реально “люкс” или просто дорогие покупки иногда.
+Пример расчёта (простая эвристика):
+
+* LuxuryIndex = доля покупок/вишлиста с ценой выше порога (например, 75-й перцентиль по каталогу) **×** средняя аффинность к премиум-брендам.
+* Если нет покупок — считай по вишлисту/рекомендациям.
+
+Бейджи:
+
+* “Mass”
+* “Middle”
+* “Premium”
+* “Luxury”
+
+### 💸 Охотник за выгодой (Deal Hunter Score)
+
+**Смысл:** пользователь любит скидки, акции, “лучше куплю выгодно”.
+Нужны 2 поля у товара (когда появится реальный каталог):
+
+* `old_price` или `discount_percent` (если нет — можно mock).
+
+DealScore растёт, если:
+
+* он добавляет/покупает товары со скидкой выше X%
+* выбирает бюджетные пресеты
+* часто держит max бюджета низким
+
+Бейджи:
+
+* “Раціональний”
+* “Мисливець за знижками”
+* “Прайс-майстер”
+
+### 🧾 Экономия / Переплата (Savings vs Splurge)
+
+Показывать как:
+
+* “Зекономлено: 420 грн” (если есть old_price)
+* или “Вище середнього сегменту на +18%” (если сравниваешь с “обычным бюджетом” пользователя)
+
+---
+
+## 2) Где это разместить в UI
+
+### Вкладка FashionDNA (у тебя уже есть метрики)
+
+Добавь блок **“📌 Профиль геймификации”**:
+
+* Level
+* XP до следующего уровня
+* Stability
+* LuxuryIndex
+* DealScore
+
+### В RPG-режиме / основном экране
+
+Сверху полоска из 4 метрик (как HUD):
+
+* 🎖 Level
+* 🧠 Stability
+* 👑 Luxury
+* 💸 Deals
+
+И рядом: бейдж “Твій архетип”
+
+* “Luxury Minimalist”
+* “Smart Casual Saver”
+* “Streetwear Collector”
+  (генерится простыми правилами по 2 индексам: Luxury + Deals + style_pref)
+
+---
+
+## 3) Как это посчитать на твоих данных прямо сейчас (без новых датасетов)
+
+В твоём коде уже есть:
+
+* `events` (телеметрия)
+* `budget_profile`
+* `brand_affinities`
+* `similarity_history`
+* `wishlist`
+* цены товаров
+
+Этого достаточно, чтобы сделать **первую версию индексов**.
+
+---
+
+## 4) Мини-патч логики (концепт, без ломания архитектуры)
+
+Добавь в `profile`:
+
+* `xp`
+* `level`
+* `deal_score`
+* `luxury_score`
+
+И функцию:
+
+```python
+def update_gamification_from_event(event):
+    t = event["type"]
+    # XP
+    xp_gain = {"swipe_like": 2, "wishlist_add": 3, "generate_outfits": 5, "buy_outfit": 20, "query": 1}.get(t, 0)
+    profile["xp"] = int(profile.get("xp", 0) + xp_gain)
+    profile["level"] = 1 + profile["xp"] // 100
+```
+
+Luxury / Deals:
+
+* Luxury: на основе среднего `price` из wishlist/purchases vs “обычного” бюджета
+* Deals: пока можно считать “экономность” как `usual / max` (если usual близко к max → не охотник за скидками; если usual сильно ниже max → осторожный)
+
+---
+
+## 5) Что это даст продукту (важно)
+
+Для пользователя:
+
+* “Я прокачиваю стиль” → retention
+* “Мой архетип” → эмоциональный якорь
+* “Я экономлю / я люкс” → идентичность
+
+Для бизнеса:
+
+* сегментация аудитории (luxury vs deal)
+* персонализация оффера (скидки/премиум)
+* рост AOV (через “собери полный образ, получи +XP”)
+
+---
+
+Если скажешь “делаем”, я в следующем сообщении дам:
+
+* конкретный список полей в `profile`
+* формулы для LuxuryIndex и DealScore (v1)
+* готовый UI-блок Streamlit (st.metric + progress + badges) под твой текущий файл 
+ **конкретный патч-план** для твоего файла `EP-SergeyJohnvikovich.py`  так, чтобы:
+
+* **скиллы появляются только когда открылись**
+* **не показываем нулевые/заблокированные**
+* у каждого пользователя **свой уникальный стек**
+* можно **подгружать partner skill-pack** (магазинные уникальные навыки) без переписывания кода
+
+---
+
+## 0) Что именно добавляем
+
+### В `profile` добавим 3 поля
+
+* `counters` — накопители действий
+* `skills` — **только открытые навыки**
+* `seen_events` — указатель, чтобы считать только новые события
+
+---
+
+## 1) Патч: расширяем `init_state()`
+
+Найди `init_state()` и добавь в блок `profile` (или после него):
+
+```python
+# --- Skills/Gamification state ---
+if "counters" not in st.session_state.profile:
+    st.session_state.profile["counters"] = {}
+if "skills" not in st.session_state.profile:
+    st.session_state.profile["skills"] = {}     # только открытые навыки
+if "seen_events" not in st.session_state.profile:
+    st.session_state.profile["seen_events"] = 0 # индекс обработанных events
+```
+
+> Важно: **мы не храним “locked skills” вообще** — только открытые.
+
+---
+
+## 2) Вставь Skills Engine (одним блоком)
+
+Вставь этот блок **после функций FashionDNA** (например после `safe_update_dna(...)`), до UI.
+
+```python
+from dataclasses import dataclass
+from typing import Callable, Dict, Optional, List, Any
+
+@dataclass
+class SkillDef:
+    id: str
+    title: str
+    desc: str
+    icon: str
+    unlock_when: Callable[[dict], bool]      # условие разблокировки
+    progress_fn: Callable[[dict], float]     # прогресс 0..1 после unlock
+    levels: Optional[List[float]] = None    # thresholds для lvl
+
+def ensure_skill_state(profile: dict):
+    profile.setdefault("counters", {})
+    profile.setdefault("skills", {})
+    profile.setdefault("seen_events", 0)
+
+def inc(profile: dict, key: str, by: int = 1):
+    profile["counters"][key] = int(profile["counters"].get(key, 0) + by)
+
+def process_new_events(profile: dict, events: list[dict]):
+    """Обрабатываем только новые события, чтобы не пересчитывать всё каждый rerun."""
+    ensure_skill_state(profile)
+    start = int(profile.get("seen_events", 0))
+    new = events[start:]
+    if not new:
+        return
+
+    for e in new:
+        t = e.get("type", "")
+        if t == "swipe_like":
+            inc(profile, "likes", 1)
+        elif t == "swipe_dislike":
+            inc(profile, "dislikes", 1)
+        elif t == "wishlist_add":
+            inc(profile, "wishlist_add", 1)
+        elif t == "wishlist_remove":
+            inc(profile, "wishlist_remove", 1)
+        elif t == "buy_outfit":
+            inc(profile, "buy_outfit", 1)
+        elif t == "generate_outfits":
+            inc(profile, "generate_outfits", 1)
+        elif t == "query":
+            inc(profile, "queries", 1)
+        # будущие события от магазинов:
+        # elif t == "deal_action": inc(profile, "deal_actions", 1)
+        # elif t == "luxury_action": inc(profile, "luxury_actions", 1)
+
+    profile["seen_events"] = start + len(new)
+
+def unlock_and_update_skills(profile: dict, skill_defs: Dict[str, SkillDef]):
+    """Никогда не создаёт locked skills в state. Только unlock -> появляется."""
+    ensure_skill_state(profile)
+
+    for sid, sdef in skill_defs.items():
+        if sid not in profile["skills"]:
+            if sdef.unlock_when(profile):
+                profile["skills"][sid] = {
+                    "id": sid,
+                    "title": sdef.title,
+                    "desc": sdef.desc,
+                    "icon": sdef.icon,
+                    "unlocked_at": now_iso(),
+                    "progress": 0.0,
+                    "level": 1,
+                }
+
+        if sid in profile["skills"]:
+            p = float(max(0.0, min(1.0, sdef.progress_fn(profile))))
+            profile["skills"][sid]["progress"] = p
+
+            if sdef.levels:
+                lvl = 1
+                for th in sdef.levels:
+                    if p >= th:
+                        lvl += 1
+                profile["skills"][sid]["level"] = lvl
+
+def get_visible_skills(profile: dict, min_progress: float = 0.01):
+    """Показываем только открытые и не нулевые."""
+    ensure_skill_state(profile)
+    res = []
+    for sid, stt in profile["skills"].items():
+        if float(stt.get("progress", 0.0)) >= min_progress:
+            res.append(stt)
+    res.sort(key=lambda s: float(s.get("progress", 0.0)), reverse=True)
+    return res
+
+# -------------------------
+# Base skills (платформа)
+# -------------------------
+def taste_stability_progress(p: dict) -> float:
+    # использует твою уже существующую stability_percent()
+    try:
+        return float(stability_percent()) / 100.0
+    except Exception:
+        return 0.0
+
+BASE_SKILLS: Dict[str, SkillDef] = {
+    "taste_stability": SkillDef(
+        id="taste_stability",
+        title="Постоянство вкуса",
+        desc="Чем выше — тем стабильнее твой стиль и точнее подбор.",
+        icon="🧠",
+        unlock_when=lambda p: len(p.get("similarity_history", [])) >= 5,
+        progress_fn=taste_stability_progress,
+        levels=[0.25, 0.50, 0.75, 0.90],
+    ),
+    "collector": SkillDef(
+        id="collector",
+        title="Коллекционер",
+        desc="Ты собираешь свою базу вещей (вишлист).",
+        icon="🧺",
+        unlock_when=lambda p: int(p.get("counters", {}).get("wishlist_add", 0)) >= 3,
+        progress_fn=lambda p: min(1.0, int(p.get("counters", {}).get("wishlist_add", 0)) / 20.0),
+        levels=[0.2, 0.4, 0.6, 0.8],
+    ),
+    "outfit_builder": SkillDef(
+        id="outfit_builder",
+        title="Сборщик образов",
+        desc="Ты выбираешь комплекты, а не одиночные вещи.",
+        icon="🖼",
+        unlock_when=lambda p: int(p.get("counters", {}).get("buy_outfit", 0)) >= 1,
+        progress_fn=lambda p: min(1.0, int(p.get("counters", {}).get("buy_outfit", 0)) / 10.0),
+        levels=[0.2, 0.5, 0.8],
+    ),
+    "explorer": SkillDef(
+        id="explorer",
+        title="Исследователь",
+        desc="Ты пробуешь разные запросы и сценарии.",
+        icon="🧭",
+        unlock_when=lambda p: int(p.get("counters", {}).get("queries", 0)) >= 5,
+        progress_fn=lambda p: min(1.0, int(p.get("counters", {}).get("queries", 0)) / 40.0),
+        levels=[0.25, 0.5, 0.75],
+    ),
+}
+
+# -------------------------
+# Partner skills (магазинные)
+# -------------------------
+# Храним в session_state.partner_skill_packs: catalog_id -> {skill_id: SkillDef}
+if "partner_skill_packs" not in st.session_state:
+    st.session_state.partner_skill_packs = {}
+
+def get_skill_defs_for_catalog(catalog_id: str) -> Dict[str, SkillDef]:
+    defs = dict(BASE_SKILLS)
+    pack = st.session_state.partner_skill_packs.get(catalog_id, {})
+    defs.update(pack)
+    return defs
+```
+
+---
+
+## 3) Подключаем движок к жизненному циклу приложения
+
+После того как ты определил активный `catalog_id`, `profile`, `items` (у тебя это уже есть), добавь **одной строкой**:
+
+```python
+process_new_events(profile, st.session_state.events)
+skill_defs = get_skill_defs_for_catalog(catalog_id)
+unlock_and_update_skills(profile, skill_defs)
+```
+
+Рекомендую поставить это **сразу после**:
+
+```python
+items = cat.get("items", DEMO_ITEMS)
+item_emb = cat.get("emb", build_item_embeddings(DEMO_ITEMS))
+```
+
+---
+
+## 4) UI: показываем навыки в “FashionDNA” вкладке (без нулей)
+
+В твоей вкладке `tab_dna` (где уже метрики), добавь блок:
+
+```python
+st.divider()
+st.subheader("🎮 Навыки (твій індивідуальний стек)")
+
+visible = get_visible_skills(profile, min_progress=0.01)
+
+if not visible:
+    st.info("Навыки откроются автоматически по мере взаимодействия. Продолжай свайпать, собирать вишлист и образы.")
+else:
+    # сетка 2 колонки
+    cols = st.columns(2)
+    for i, sk in enumerate(visible):
+        with cols[i % 2]:
+            st.markdown(f"{sk['icon']} **{sk['title']}** · lvl {sk.get('level',1)}")
+            st.progress(float(sk.get("progress", 0.0)))
+            st.caption(sk.get("desc",""))
+```
+
+✅ Это гарантирует: **никаких “серых нулей”** — пока не открыл, его не существует.
+
+---
+
+## 5) Partner skill packs: загрузка JSON в sidebar (магазинные “уникальные навыки”)
+
+В sidebar (после блока импорта CSV) добавь expander:
+
+```python
+with st.expander("🏷 Partner Skill Pack (JSON)", expanded=False):
+    st.caption("Загрузи JSON-пак навыков для конкретного каталога/магазина. Появятся только когда откроются.")
+    pack_file = st.file_uploader("Загрузить skill_pack.json", type=["json"], key="skill_pack_uploader")
+
+    if pack_file is not None:
+        raw = pack_file.read()
+        data = json.loads(raw.decode("utf-8"))
+
+        # ожидаем поля: catalog_id, skills:[...]
+        target_catalog = data.get("catalog_id", catalog_id)
+        skills_list = data.get("skills", [])
+
+        parsed_pack: Dict[str, SkillDef] = {}
+
+        # ВАЖНО: тут мы поддержим только безопасные "шаблонные" rules,
+        # чтобы не грузить произвольный код.
+        for s in skills_list:
+            sid = str(s["id"])
+            title = str(s["title"])
+            desc = str(s.get("desc", ""))
+            icon = str(s.get("icon", "✨"))
+
+            # шаблонные условия (без кода):
+            unlock = s.get("unlock", {"type": "counter_gte", "key": "wishlist_add", "value": 5})
+            prog = s.get("progress", {"type": "counter_ratio", "key": "wishlist_add", "max": 25})
+            levels = s.get("levels", [0.25, 0.5, 0.75])
+
+            def make_unlock_fn(rule: dict):
+                rtype = rule.get("type")
+                if rtype == "counter_gte":
+                    key = rule.get("key")
+                    val = int(rule.get("value", 1))
+                    return lambda p, k=key, v=val: int(p.get("counters", {}).get(k, 0)) >= v
+                if rtype == "brand_affinity_gte":
+                    brand = rule.get("brand")
+                    val = float(rule.get("value", 0.7))
+                    return lambda p, b=brand, v=val: float(p.get("brand_affinities", {}).get(b, 0.0)) >= v
+                return lambda p: False
+
+            def make_progress_fn(rule: dict):
+                rtype = rule.get("type")
+                if rtype == "counter_ratio":
+                    key = rule.get("key")
+                    mx = float(rule.get("max", 20))
+                    return lambda p, k=key, m=mx: min(1.0, float(p.get("counters", {}).get(k, 0)) / m)
+                if rtype == "brand_affinity":
+                    brand = rule.get("brand")
+                    return lambda p, b=brand: float(p.get("brand_affinities", {}).get(b, 0.0))
+                return lambda p: 0.0
+
+            parsed_pack[sid] = SkillDef(
+                id=sid,
+                title=title,
+                desc=desc,
+                icon=icon,
+                unlock_when=make_unlock_fn(unlock),
+                progress_fn=make_progress_fn(prog),
+                levels=levels,
+            )
+
+        st.session_state.partner_skill_packs[target_catalog] = parsed_pack
+        log_event("partner_skill_pack_loaded", {"catalog_id": target_catalog, "count": len(parsed_pack)})
+        st.success(f"Skill pack загружен для catalog_id='{target_catalog}' ({len(parsed_pack)} skills).")
+        st.rerun()
+```
+
+### Почему так безопаснее
+
+Мы **не исполняем код из JSON**, только шаблонные правила — а значит партнёр может “дизайнить” навыки, но не может ломать приложение.
+
+---
+
+## 6) Пример `skill_pack.json` (магазинный)
+
+```json
+{
+  "catalog_id": "demo",
+  "skills": [
+    {
+      "id": "demo_capsule_builder",
+      "title": "Capsule Builder",
+      "desc": "Ты собираешь капсулы — магазин откроет персональные подборки.",
+      "icon": "🧩",
+      "unlock": { "type": "counter_gte", "key": "generate_outfits", "value": 3 },
+      "progress": { "type": "counter_ratio", "key": "generate_outfits", "max": 15 },
+      "levels": [0.25, 0.5, 0.75, 0.9]
+    }
+  ]
+}
+```
+
+---
+
+## Готово: что будет в результате
+
+* Пользователь видит **только то, что реально “его”** и уже прокачивается.
+* У каждого формируется **свой билд**: кто-то “Коллекционер”, кто-то “Сборщик образов”, кто-то “Стабильный вкус”.
+* Магазины смогут добавлять **свои уникальные навыки** (без кода, через JSON), и это поднимет вовлеченность с обеих сторон.
+
+---
+
+Если хочешь, следующим шагом сделаю **2 топовых “витринных” навыка**, которые прям продают продукт магазину:
+
+1. 💸 “Выгода” (экономия на скидках / умная покупка)
+2. 👑 “Люксовость” (premium/luxury индекс)
+
+Но для этого нужно либо `old_price/discount`, либо мы сначала делаем “моковый discount” в демо-каталоге.
+
+Скажи: делаем пока **мок скидок для демо**, или ты уже планируешь реальный фид с `old_price`?
