@@ -6,6 +6,8 @@ import io
 import json
 import hashlib
 import time
+import cv2
+import numpy as np
 from datetime import datetime
 from typing import Optional, List
 from pydantic import BaseModel
@@ -36,7 +38,7 @@ def _try_load_ai_libs():
                 from mediapipe.tasks.python.core import base_options
                 FaceDetector = vision.FaceDetector
                 BaseOptions = base_options.BaseOptions
-            except:
+            except Exception:
                 pass
         except ImportError:
             pass
@@ -47,6 +49,7 @@ class VPConfig(BaseModel):
     sd_url: str = os.getenv("SD_API_URL", "http://127.0.0.1:7860")
     local_model_id: str = os.getenv("LOCAL_VTON_MODEL", "runwayml/stable-diffusion-inpainting")
     use_local_ai: bool = os.getenv("ENABLE_LOCAL_AI", "0") == "1"
+    fallback_image_url: str = "https://picsum.photos/id/{id}/600/800"
     # Динамічний вибір пристрою нижче
 
 class VirtualTryOnPipeline:
@@ -182,7 +185,7 @@ class VirtualTryOnPipeline:
                 s, h_k = kp["shoulders"], kp["hips"]
                 # Координати: [ls.x, ls.y, rs.x, rs.y]
                 # Створюємо ROI для маски
-                bx1, by1 = min(s[0], s[2], h_k[0], h_k[2]) * new_w
+                bx1 = min(s[0], s[2], h_k[0], h_k[2]) * new_w
                 by1 = min(s[1], s[3]) * new_h
                 bx2 = max(s[0], s[2], h_k[0], h_k[2]) * new_w
                 by2 = max(h_k[1], h_k[3]) * new_h
@@ -244,7 +247,8 @@ class VirtualTryOnPipeline:
             resp = requests.post(f"{self.config.sd_url}{endpoint}", json=sd_payload, timeout=10)
             resp.raise_for_status()
             return base64.b64decode(resp.json()["images"][0])
-        except:
+        except Exception as e:
+            print(f"⚠️ SD API Failed, falling back to Evo engine: {e}")
             return self._generate_evo_composite(gender=gender, items=items, photo_bytes=photo_bytes)
 
     def _generate_evo_composite(self, gender: str, items: List[str], photo_bytes: Optional[bytes] = None, user_id: str = "guest", avatar_data: Optional[dict] = None) -> Optional[bytes]:
@@ -263,7 +267,7 @@ class VirtualTryOnPipeline:
                 avatar_raw = Image.open(io.BytesIO(photo_bytes)).convert("RGB")
             else:
                 avatar_ids = [1005, 1011] if gender == 'male' else [1027, 342]
-                avatar_url = f"https://picsum.photos/id/{random.choice(avatar_ids)}/600/800"
+                avatar_url = self.config.fallback_image_url.format(id=random.choice(avatar_ids))
                 avatar_raw = Image.open(io.BytesIO(requests.get(avatar_url, timeout=5).content)).convert("RGB")
             
             # Рендеримо головне фото (аватар)

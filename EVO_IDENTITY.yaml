@@ -7,6 +7,7 @@ capabilities:
   - user_profiling
   - fashion_embedding
   - outfit_generation
+  - agentic_dom_parsing
 security:
   isolation_level: "high"
   allowed_core_imports: ["models", "utils"]

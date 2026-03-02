@@ -26,6 +26,8 @@ class SQLiteProfileStore:
         conn.row_factory = sqlite3.Row
         return conn
 
+
+
     def init_schema(self) -> None:
         with self._connect() as conn:
             conn.execute(
@@ -47,11 +49,17 @@ class SQLiteProfileStore:
                     gender TEXT NOT NULL DEFAULT 'male',
                     body_type TEXT NOT NULL DEFAULT 'rectangular',
                     measurements_json TEXT NOT NULL DEFAULT '{}',
+                    meta_data_json TEXT NOT NULL DEFAULT '{}',
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
                 """
             )
+            # Migration for old schemas
+            try:
+                conn.execute("ALTER TABLE user_profile ADD COLUMN meta_data_json TEXT NOT NULL DEFAULT '{}'")
+            except sqlite3.OperationalError:
+                pass # Column already exists
 
     def _bootstrap_payload(self, user_id: str) -> Dict[str, Any]:
         payload: Dict[str, Any] = {"user_id": user_id}
@@ -96,6 +104,7 @@ class SQLiteProfileStore:
             gender=row["gender"],
             body_type=row["body_type"],
             measurements=json.loads(row["measurements_json"]),
+            meta_data=json.loads(row["meta_data_json"]),
         )
 
     def upsert_profile(self, profile: Profile) -> None:
@@ -106,8 +115,8 @@ class SQLiteProfileStore:
                     user_id, theme_color, style_preset, budget_min, budget_max,
                     affinities_json, counters_json, skills_json, seen_events,
                     similarity_history_json, creativity_level, tone_preference,
-                    preferred_aesthetics_json, gender, body_type, measurements_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    preferred_aesthetics_json, gender, body_type, measurements_json, meta_data_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(user_id) DO UPDATE SET
                     theme_color=excluded.theme_color,
                     style_preset=excluded.style_preset,
@@ -124,6 +133,7 @@ class SQLiteProfileStore:
                     gender=excluded.gender,
                     body_type=excluded.body_type,
                     measurements_json=excluded.measurements_json,
+                    meta_data_json=excluded.meta_data_json,
                     updated_at=CURRENT_TIMESTAMP
                 """,
                 (
@@ -143,6 +153,7 @@ class SQLiteProfileStore:
                     profile.gender,
                     profile.body_type,
                     json.dumps(profile.measurements, ensure_ascii=False),
+                    json.dumps(profile.meta_data, ensure_ascii=False),
                 ),
             )
 

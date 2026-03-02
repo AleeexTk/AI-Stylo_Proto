@@ -1,83 +1,91 @@
-# 🧬 AI-Stylo Core: Personal Fashion OS
+# 🧬 AI-Stylo: The Personal Fashion OS
 
-AI-Stylo is a fashion recommendation prototype with two UX modes on one core:
+> **"Style is not just how you look; it's how your data feels."**  
+> Powered by **EvoPyramid PEAR Architecture** and Local AI.
 
-- **RPG Inventory UI** for B2C engagement (`apps/web/streamlit_rpg/app.py`)
-- **B2B Widget Demo** for partner stores (`apps/web/streamlit_b2b/app.py`)
+AI-Stylo is a state-of-the-art Personal Fashion Operating System designed to bridge the gap between human aesthetics and machine reasoning. It utilizes a local-first AI stack (Ollama + Stable Diffusion) to provide intimate, data-driven style recommendations while respecting the user's "Style DNA".
 
-## Quick start
+---
+
+## 📐 Core Architecture: The PEAR Pipeline
+
+The heart of AI-Stylo is the **PEAR Orchestrator** (`ai_stylo/core/ai/orchestrator.py`), which follows a strict 5-stage bio-informatic reasoning loop:
+
+1. **👁️ PERCEIVE**: Intent extraction and environmental awareness.
+2. **🌿 ENRICH**: Real-time context gathering (Weather, Events, Trends).
+3. **🧬 ADAPT**: Personalizing the request via User Style DNA and Personality Memory.
+4. **⚡ ACT**: Multi-tool execution (Recommendation, Generation, Purchase Manifests).
+5. **🧠 REFLECT**: Self-correction and learning for future interactions.
+
+---
+
+## 📂 Project Structure
+
+```bash
+AI-Stylo_Proto/
+├── main.py                    # 🚀 Main entry point
+├── ai_stylo/
+│   ├── core/                  # 🧠 The Brain
+│   │   ├── ai/                # Orchestration, Agentic DOM Parsing
+│   │   ├── memory/            # SQLite Persistence (Profile, Prefs, Vectors)
+│   │   ├── skills/            # RPG Skill Engine (Gamification)
+│   │   └── contracts.py       # Hardened Dataclasses
+│   ├── adapters/              # 🔌 The Nervous System
+│   │   ├── ollama_adapter.py  # Local LLM Interface (Robust Retry logic)
+│   │   ├── generative_pipeline.py # Neural Try-On & MediaPipe Warping
+│   │   └── google_ai_adapter.py # RAG Fallback
+│   └── extension/             # 🌐 Chrome Extension Bridge
+├── apps/                      # 🖥️ Experience Layers
+│   └── web/                   # Streamlit RPG & B2B Portals
+├── configs/                   # ⚙️ Identity & Identity Manifests
+└── tests/                     # 🧪 Verification Suite
+```
+
+---
+
+## ⚡ Quick Start
+
+### 1. Prerequisites
+
+- **Python 3.10+**
+- **Ollama** (`llama3.2` + `nomic-embed-text`)
+- **Stable Diffusion API** (Optional for local VTON)
+
+### 2. Installation
 
 ```bash
 pip install -r requirements.txt
+cp .env.example .env  # Configure your endpoints
 ```
 
-### One-command runs
+### 3. Execution
 
 ```bash
-make run-rpg
-make run-b2b
-make demo-data
-```
-
-- `run-rpg` launches the main Streamlit RPG app.
-- `run-b2b` launches the embedded-store demo screen.
-- `demo-data` generates `data/demo_catalog.json` for repeatable local demos.
-
-## Environment variables
-
-```bash
-# Ollama connection
-export OLLAMA_BASE_URL=http://localhost:11434
-export OLLAMA_CHAT_MODEL=llama3
-export OLLAMA_EMBED_MODEL=nomic-embed-text
-export OLLAMA_TIMEOUT=30
-
-# Optional: allow legacy Google RAG fallback when Ollama is unavailable
-export USE_GOOGLE_RAG_FALLBACK=0
-```
-
-## Local run example (Ollama-first)
-
-```bash
-# 1) Start Ollama and pull models once
-ollama serve
-ollama pull llama3
-ollama pull nomic-embed-text
-
-# 2) Run app
+# Start the full experience
 python main.py
-# or
-streamlit run apps/web/streamlit_rpg/app.py
 ```
 
-## Current repo layout
+---
 
-```text
-apps/
-  core/
-    contracts.py
-    skills_engine.py
-  adapters/
-    google_ai_adapter.py
-  web/
-    streamlit_rpg/app.py
-    streamlit_b2b/app.py
-scripts/
-  demo_data.py
-```
+## 🛡️ Identity & Compliance
 
-## Product architecture (target)
+AI-Stylo follows the **EVO_IDENTITY.yaml** manifest. It ensures:
 
-See `docs/REPO_BOOTSTRAP.md` for the recommended “Core / Experience / Integration / Growth” structure and rollout sequence.
+- **Isolation Level: High** (Privacy first)
+- **Quarantine Enabled** (Unrecognized inputs are sanitized)
+- **Dual-Mode UI** (Immersive RPG for users, Professional Grid for B2B)
 
-## Execution roadmap
+---
 
-See `docs/GITHUB_ISSUES.md` for a prioritized issue list that can be copied into GitHub Issues.
+## 🚀 Roadmap: The Evolutionary Path
 
-## Local Ollama assistant plan (RU)
+- [x] **PEAR Orchestrator** (Bio-informatic pipeline)
+- [x] **Neural Warping** (MediaPipe pose-to-garment sync)
+- [x] **Agentic DOM Parser** (Real-time item extraction using BS4)
+- [ ] **Stylescape Hub Integration** (Production SaaS connector)
+- [ ] **Real-world Trial** (BETA testing in Kyiv Fashion Cluster)
 
-See `docs/LOCAL_AI_ASSISTANT_PLAN_RU.md` for a detailed architecture, roadmap, risks, testing, and budget for the offline-first Sergey assistant.
+---
+---
 
-## Additional reference docs
-
-- `docs/EVOPYRAMID_AI_SELF_DIAGNOSTIC_QUESTIONNAIRE_v1.1.md` — imported AI self-diagnostic questionnaire used as a custom-instructions reference artifact.
+##### Created with ❤️ by the AI-Stylo Dev Collective (AleeexTk & SergeyJohnvikovich)

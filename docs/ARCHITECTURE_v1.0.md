@@ -66,22 +66,23 @@
 
 ---
 
-## 4. Repository Structure (Target)
+## 4. Repository Structure (Actual)
 
 ```text
 ai_stylo/
   core/
-    catalog/
-    profile/
-    events/
-    skills/
-    outfits/
-    analytics/
-  tryon/
-    job_manager.py
-    worker.py
-    providers/
-  web_widget/
-    sdk.js
-    ui_components/
+    ai/                 # PEAR Orchestrator, Agentic Interface
+    memory/             # SQLite Stores (Profile, Preference, Vector)
+    skills/             # Unified Skill Engine & Base Skills
+    tools/              # Local Tool Registry & Shotlist/Capsule tools
+    contracts.py        # Shared Dataclasses
+  adapters/
+    ollama_adapter.py   # Main LLM Client
+    generative_pipeline.py # SD-XL & MediaPipe VTON
+    google_ai_adapter.py # RAG Fallback
+  extension/            # Chrome Extension Logic (JS/JSON)
+apps/
+  web/
+    streamlit_rpg/      # B2C Immersive UI
+    streamlit_b2b/      # B2B Pilot Showcase
 ```

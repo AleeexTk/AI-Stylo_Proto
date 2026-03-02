@@ -13,6 +13,11 @@ from ai_stylo.core.contracts import Profile
 class MockToolRegistry:
     def tool_schemas(self): return []
     def execute(self, name, args): return {}
+    def dispatch(self, tool_name: str, *args, **kwargs):
+        method = getattr(self, tool_name, None)
+        if callable(method):
+            return method(*args, **kwargs)
+        return {"error": f"Tool {tool_name} not found"}
 
 def test_decision_engine():
     # Setup
@@ -38,10 +43,6 @@ def test_decision_engine():
     context = orch.enrich("sanya_test", perception["domain"], perception["event_type"])
     context["profile"] = profile # Override with our test profile
     
-    memory_trace = orch._build_memory_trace(context)
-    print(f"2. MEMORY GATE: {memory_trace}")
-    
-    # 2. MEMORY GATE:
     memory_trace = orch._build_memory_trace(context)
     print(f"2. MEMORY GATE: {memory_trace}")
     
