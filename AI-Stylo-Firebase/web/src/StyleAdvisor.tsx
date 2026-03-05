@@ -152,25 +152,19 @@ export default function StyleAdvisor() {
 
       try {
         const catalogRefWithVector = catalogRef as unknown as { 
-          findNearest: (field: string, vector: number[], opts: { distanceMeasure: string, limit: number }) => import("firebase/firestore").Query<CatalogMatch> 
+          findNearest: (field: string, vector: number[], opts: { distanceMeasure: string, limit: number }) => any 
         };
         if (typeof catalogRefWithVector.findNearest === "function") {
           const vq = catalogRefWithVector.findNearest("embedding", vector, { distanceMeasure: "COSINE", limit: 5 });
-          const snapshot = await getDocs(vq);
-          matches = snapshot.docs.map(doc => {
-            const data = doc.data() as Omit<CatalogMatch, "id">;
-            return { id: doc.id, ...data } as CatalogMatch;
-          });
+          const snapshot = await getDocs(vq as any);
+          matches = snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as CatalogMatch) }));
         } else {
           throw new Error("findNearest not available");
         }
       } catch {
         const basicQuery = query(catalogRef, fsLimit(5));
         const snapshot = await getDocs(basicQuery);
-        matches = snapshot.docs.map(doc => {
-          const data = doc.data() as Omit<CatalogMatch, "id">;
-          return { id: doc.id, ...data } as CatalogMatch;
-        });
+        matches = snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as CatalogMatch) }));
       }
 
       // Recommendation
