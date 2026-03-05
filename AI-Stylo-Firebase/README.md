@@ -4,6 +4,6 @@ This directory contains the autonomous, cloud-native version of AI-Stylo, built 
 
 ## Architecture Approach
 
-- **Frontend**: To be determined (React / Next.js / Streamlit Cloud)
-- **Backend / DB**: Firebase ecosystem
-- **AI Integration**: Serverless AI endpoints (e.g., Vertex AI / OpenAI) or bridged local inference.
+- **Frontend**: React-based Style Advisor with hybrid PEAR execution.
+- **Backend / DB**: Firebase (Cloud Functions + Firestore Vector Search).
+- **AI Integration**: Dual Gemini integration (Cloud-to-Cloud and Browser-to-Cloud).

@@ -344,3 +344,102 @@ def save_outfit(req: https_fn.Request) -> https_fn.Response:
         return cors_ok({"status": "saved"})
     except Exception as e:
         return cors_ok({"error": str(e)}, 500)
+
+
+# ── Endpoint: POST /stylescape/design_collection ───────────────────────────────
+@https_fn.on_request(cors=CORS)
+def stylescape_design_collection(req: https_fn.Request) -> https_fn.Response:
+    """
+    AI-Designer: Co-create a collection.
+    Receives user vibe/idea, generates a detailed prompt for image generation,
+    and saves the 'blueprint' to Firestore user_designs.
+    """
+    if req.method == "OPTIONS":
+        return cors_preflight()
+    try:
+        body = req.get_json(silent=True) or {}
+        user_id = body.get("user_id")
+        user_idea = body.get("idea", "A futuristic casual look")
+
+        if not user_id:
+            return cors_ok({"error": "user_id is required"}, 400)
+
+        # Generate a detailed prompt for the image generator
+        prompt = (
+            "You are an expert fashion designer collaborating with a client. "
+            f"Their raw idea: '{user_idea}'.\n"
+            "Create a highly detailed, professional prompt for an AI image generator to visualize this look. "
+            "Include details about fabrics, cut, lighting, mood, and color palette. "
+            "Keep it under 80 words."
+        )
+
+        model = genai.GenerativeModel(VISION_MODEL)
+        detailed_prompt = model.generate_content(prompt).text.strip()
+
+        # Generate a cool capsule name
+        name_prompt = f"Give a catchy 2-4 word name for this fashion capsule concept: {detailed_prompt}"
+        capsule_name = model.generate_content(name_prompt).text.strip().replace('"', '')
+
+        # Save to Firestore
+        db = firestore.client()
+        design_data = {
+            "user_id": user_id,
+            "original_idea": user_idea,
+            "ai_prompt": detailed_prompt,
+            "capsule_name": capsule_name,
+            "timestamp": firestore.SERVER_TIMESTAMP,
+            "status": "blueprint"
+        }
+        doc_ref = db.collection("user_designs").add(design_data)[1]
+
+        return cors_ok({
+            "design_id": doc_ref.id,
+            "capsule_name": capsule_name,
+            "generation_prompt": detailed_prompt,
+            "message": "AI Designer has prepared your blueprint. Ready for visualization."
+        })
+
+    except Exception as e:
+        return cors_ok({"error": str(e)}, 500)
+
+
+# ── Endpoint: POST /stylescape/checkout_generated_look ─────────────────────────
+@https_fn.on_request(cors=CORS)
+def stylescape_checkout_generated_look(req: https_fn.Request) -> https_fn.Response:
+    """
+    Real-world Checkout: Bridges AI-generated image with real products in catalog.
+    Takes the generated photo and returns an 'add to cart' manifest.
+    """
+    if req.method == "OPTIONS":
+        return cors_preflight()
+    try:
+        body = req.get_json(silent=True) or {}
+        image_b64 = body.get("image_b64")
+        mime_type = body.get("mime_type", "image/jpeg")
+
+        if not image_b64:
+            return cors_ok({"error": "image_b64 is required. Provide the generated look."}, 400)
+
+        # 1. P: Analyze the generated image
+        style_analysis = get_style_description(image_b64, mime_type)
+
+        # 2. E & A: Find closest real catalog items
+        embed_input = style_analysis.get("embedding_text", style_analysis.get("style_description", "fashion item"))
+        query_vector = embed_text(embed_input)
+        
+        db = firestore.client()
+        real_matches = vector_search_catalog(db, query_vector, top_k=3)
+
+        # Calculate total estimated cart
+        total_price = sum(float(item.get("price", 0)) for item in real_matches if str(item.get("price", 0)).replace('.', '', 1).isdigit())
+
+        return cors_ok({
+            "generated_style": style_analysis.get("style_description"),
+            "buy_manifest": real_matches,
+            "estimated_cart_total": total_price,
+            "message": "Dreams to Reality: Here are the closest real items to your AI-generated look."
+        })
+
+    except Exception as e:
+        return cors_ok({"error": str(e)}, 500)
+

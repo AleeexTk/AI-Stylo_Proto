@@ -25,8 +25,8 @@ const FEATURES: Feature[] = [
   },
   {
     icon: "🤖",
-    title: "PEAR Intelligence",
-    desc: "The 5-stage PEAR pipeline (Perceive → Enrich → Adapt → Act → Reflect) runs as Firebase Cloud Functions.",
+    title: "Client-Side PEAR Intelligence",
+    desc: "The 5-stage PEAR pipeline (Perceive → Enrich → Adapt → Act → Reflect) now runs entirely in your browser using Gemini APIs and Firestore Vector Search.",
   },
   {
     icon: "🛡️",

@@ -38,6 +38,7 @@ interface RecommendResult {
 
 // Gemini Config
 const GEN_AI_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+const FUNCTIONS_URL = import.meta.env.VITE_FUNCTIONS_URL || "https://analyze-and-recommend-629232323.a.run.app"; // Replace with your actual deployed URL
 const genAI = GEN_AI_KEY ? new GoogleGenerativeAI(GEN_AI_KEY) : null;
 
 export default function StyleAdvisor() {
@@ -75,18 +76,46 @@ export default function StyleAdvisor() {
     if (file && file.type.startsWith("image/")) processFile(file);
   }, []);
 
-  const analyzeLocally = async () => {
-    if (!imageB64 || !genAI) {
-      if (!GEN_AI_KEY) setError("Gemini API Key missing (VITE_GEMINI_API_KEY)");
-      return;
-    }
+  const analyzeStyle = async () => {
+    if (!imageB64) return;
     
     setLoading(true);
     setError("");
     setResult(null);
 
+    // 1. Try Cloud Function First
     try {
-      // 1. Analyze Style with Gemini Vision
+      if (FUNCTIONS_URL) {
+        console.log("Calling Cloud Function PEAR Pipeline...");
+        const response = await fetch(`${FUNCTIONS_URL}/analyze_and_recommend`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image_b64: imageB64, mime_type: mimeType })
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          setResult(data);
+          setLoading(false);
+          return;
+        } else {
+          console.warn("Cloud Function failed or CORS issue. Falling back to local execution.");
+        }
+      }
+    } catch (cfErr) {
+      console.warn("Cloud Function unreachable. Falling back to local execution.", cfErr);
+    }
+
+    // 2. Fallback to Local Client-Side Analysis (EvoPyramid Bridge)
+    if (!genAI) {
+      setError("Gemini API Key missing (VITE_GEMINI_API_KEY) and Cloud Function unavailable.");
+      setLoading(false);
+      return;
+    }
+
+    try {
+      console.log("Running Client-Side PEAR Pipeline (Fallback)...");
+      // Analyze Style with Gemini Vision
       const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
       const prompt = `Analyze this clothing image and return ONLY a JSON object:
       {
@@ -109,66 +138,57 @@ export default function StyleAdvisor() {
         const cleanJson = responseText.replace(/```json|```/g, "").trim();
         styleAnalysis = JSON.parse(cleanJson);
       } catch {
-        console.error("JSON parse error", responseText);
         throw new Error("Failed to parse AI response");
       }
 
-      // 2. Generate Embedding for the style
+      // Generate Embedding
       const embedModel = genAI.getGenerativeModel({ model: "text-embedding-004" });
       const embedResult = await embedModel.embedContent(styleAnalysis.embedding_text || styleAnalysis.style_description);
       const vector = embedResult.embedding.values;
 
-      // 3. Search Firestore — try client-side findNearest, fallback to basic query
-      console.log("Searching Firestore, vector dims:", vector.length);
+      // Search Firestore
       const catalogRef = collection(db, "catalog");
       let matches: CatalogMatch[] = [];
 
       try {
-        // findNearest is available on CollectionReference in Firebase JS SDK v9.22+
-        const vectorRef = (catalogRef as unknown as { findNearest: (field: string, vector: number[], opts: object) => object }).findNearest;
-        if (typeof vectorRef === "function") {
-          const vq = (catalogRef as unknown as { findNearest: (f: string, v: number[], o: object) => object })
-            .findNearest("embedding", vector, { distanceMeasure: "COSINE", limit: 5 }) as Parameters<typeof getDocs>[0];
+        const catalogRefWithVector = catalogRef as unknown as { 
+          findNearest: (field: string, vector: number[], opts: { distanceMeasure: string, limit: number }) => import("firebase/firestore").Query<CatalogMatch> 
+        };
+        if (typeof catalogRefWithVector.findNearest === "function") {
+          const vq = catalogRefWithVector.findNearest("embedding", vector, { distanceMeasure: "COSINE", limit: 5 });
           const snapshot = await getDocs(vq);
-          matches = snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as object) } as CatalogMatch));
+          matches = snapshot.docs.map(doc => {
+            const data = doc.data() as Omit<CatalogMatch, "id">;
+            return { id: doc.id, ...data } as CatalogMatch;
+          });
         } else {
           throw new Error("findNearest not available");
         }
-      } catch (vErr) {
-        console.warn("Vector search not available, using basic query.", vErr);
+      } catch {
         const basicQuery = query(catalogRef, fsLimit(5));
         const snapshot = await getDocs(basicQuery);
-        matches = snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as object) } as CatalogMatch));
+        matches = snapshot.docs.map(doc => {
+          const data = doc.data() as Omit<CatalogMatch, "id">;
+          return { id: doc.id, ...data } as CatalogMatch;
+        });
       }
 
-      // 4. Generate Recommendation text
+      // Recommendation
       const recModel = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
       const matchesText = matches.map(m => `- ${m.name} by ${m.brand}`).join("\n");
-      const recPrompt = `The user likes this style: ${styleAnalysis.style_description}. 
-      We found these items in our catalog:
-      ${matchesText}
-      Write a warm 2-sentence personal recommendation.`;
+      const recPrompt = `User style: ${styleAnalysis.style_description}. Catalog matches:\n${matchesText}\nWrite a warm 2-sentence recommendation.`;
       
       const recResult = await recModel.generateContent(recPrompt);
       const recommendation = recResult.response.text().trim();
 
-      setResult({
-        style_analysis: styleAnalysis,
-        matches,
-        recommendation
-      });
-
+      setResult({ style_analysis: styleAnalysis, matches, recommendation });
     } catch (err: unknown) {
-      console.error(err);
-      const errMsg = err instanceof Error ? err.message : "Analysis failed";
-      
-      // If the user's Gemini key has limit: 0 (e.g. EU region free tier block) or is out of quota
-      if (errMsg.includes("429") || errMsg.includes("quota") || errMsg.includes("exceeded") || errMsg.includes("404")) {
-        console.warn("Google API Quota exceeded or model not found. Falling back to MOCK_RESULT for demo purposes.");
-        setError("API Quota Error (limit: 0). Falling back to Demo Mode. " + errMsg);
+      const error = err as { message?: string };
+      if (error.message?.includes("429") || error.message?.includes("quota")) {
         setResult(MOCK_RESULT);
+        setError("API Quota Error. Switched to Demo Mode.");
       } else {
-        setError(errMsg);
+        setError(error.message || "Analysis failed");
       }
     } finally {
       setLoading(false);
@@ -220,7 +240,7 @@ export default function StyleAdvisor() {
               <button
                 id="analyze-btn"
                 className={`btn btn-primary ${loading ? 'loading-op-70' : ''}`}
-                onClick={(e) => { e.stopPropagation(); analyzeLocally(); }}
+                onClick={(e) => { e.stopPropagation(); analyzeStyle(); }}
                 disabled={loading}
               >
                 {loading ? "🔄 Analyzing..." : "🔍 Analyze & Find Matches"}
