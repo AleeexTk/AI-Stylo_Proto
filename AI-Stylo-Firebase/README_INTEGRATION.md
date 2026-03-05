@@ -26,7 +26,7 @@ The backend (`functions/main.py`) exposes these primary endpoints:
 | :--- | :--- | :--- |
 | `/analyze_and_recommend` | `POST` | Core PEAR Pipeline. Takes image B64 -> returns analysis + catalog matches. |
 | `/stylescape/design_collection` | `POST` | **AI Designer**. Text idea -> Full capsule blueprint (prompt, name, tags). |
-| `/stylescape/checkout_generated_look`| `POST` | **Visual Checkout**. Generated image -> `buy_manifest` with real products. |
+| `/stylescape/checkout_generated_look` | `POST` | **Visual Checkout**. Generated image -> `buy_manifest` with real products. |
 
 ## 3. Frontend Integration (`web/src/`)
 
