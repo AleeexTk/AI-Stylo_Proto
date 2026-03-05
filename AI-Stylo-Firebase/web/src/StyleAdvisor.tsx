@@ -87,7 +87,7 @@ export default function StyleAdvisor() {
 
     try {
       // 1. Analyze Style with Gemini Vision
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
       const prompt = `Analyze this clothing image and return ONLY a JSON object:
       {
         "style_description": "concise description",
@@ -142,7 +142,7 @@ export default function StyleAdvisor() {
       }
 
       // 4. Generate Recommendation text
-      const recModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      const recModel = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
       const matchesText = matches.map(m => `- ${m.name} by ${m.brand}`).join("\n");
       const recPrompt = `The user likes this style: ${styleAnalysis.style_description}. 
       We found these items in our catalog:
@@ -160,7 +160,16 @@ export default function StyleAdvisor() {
 
     } catch (err: unknown) {
       console.error(err);
-      setError(err instanceof Error ? err.message : "Analysis failed");
+      const errMsg = err instanceof Error ? err.message : "Analysis failed";
+      
+      // If the user's Gemini key has limit: 0 (e.g. EU region free tier block) or is out of quota
+      if (errMsg.includes("429") || errMsg.includes("quota") || errMsg.includes("exceeded") || errMsg.includes("404")) {
+        console.warn("Google API Quota exceeded or model not found. Falling back to MOCK_RESULT for demo purposes.");
+        setError("API Quota Error (limit: 0). Falling back to Demo Mode. " + errMsg);
+        setResult(MOCK_RESULT);
+      } else {
+        setError(errMsg);
+      }
     } finally {
       setLoading(false);
     }
@@ -323,3 +332,24 @@ export default function StyleAdvisor() {
     </div>
   );
 }
+
+// ── Dev Mock (Fallback for Quota/API Issues) ──────────────────────────────────
+const MOCK_RESULT: RecommendResult = {
+  style_analysis: {
+    style_description: "contemporary minimalist streetwear with monochromatic palette",
+    colors: ["charcoal", "off-white", "muted sage"],
+    category: "full_outfit",
+    occasion: "casual",
+    season: "all-season",
+    style_tags: ["minimalist", "oversized", "monochrome", "urban", "layered"],
+    fit: "relaxed",
+  },
+  matches: [
+    { id: "1", name: "Oversized Cotton Crewneck", brand: "COS", category: "tops", color: "charcoal", price: 89 },
+    { id: "2", name: "Wide-Leg Linen Trousers", brand: "Arket", category: "bottoms", color: "sage green", price: 119 },
+    { id: "3", name: "Minimal Leather Tote", brand: "& Other Stories", category: "accessories", color: "cream", price: 149 },
+    { id: "4", name: "Low-Top Canvas Sneakers", brand: "Common Projects", category: "footwear", color: "white", price: 395 },
+    { id: "5", name: "Ribbed Merino Scarf", brand: "Toteme", category: "accessories", color: "oatmeal", price: 175 },
+  ],
+  recommendation: "Your style radiates effortless, considered minimalism — a masterclass in letting quality speak louder than volume. The items we've matched from our catalog amplify your monochromatic instinct: the oversized COS crewneck and wide-leg Arket linen trousers create that perfect relaxed-yet-intentional silhouette you're clearly drawn to. For a finishing touch, tuck the scarf loosely into the tote and let the clean white sneakers ground the whole look.",
+};
