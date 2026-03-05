@@ -23,11 +23,14 @@ class SizeEngine:
             "H&M": BrandFitProfile("H&M", 0.2, {"S": 0.14, "M": 0.16, "L": 0.18})
         }
 
-    def suggest_size(self, avatar_profile: Dict[str, Any], product_metadata: Dict[str, Any]) -> Dict[str, Any]:
+    def analyze_fit(self, avatar_profile: Dict[str, Any], product_metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Рекомендует оптимальный размер на основе профиля пользователя и метаданных товара.
         """
-        brand = product_metadata.get("brand", "Generic")
+        if product_metadata is None:
+            product_metadata = {}
+            
+        brand = product_metadata.get("brand", product_metadata.get("brand_id", "Generic"))
         profile = self.brand_profiles.get(brand, BrandFitProfile(brand, 0.0, {"S": 0.13, "M": 0.15, "L": 0.17}))
         
         # Level 3: Анализ по фото (shoulder_norm)
@@ -50,6 +53,23 @@ class SizeEngine:
         
         return {
             "suggested_size": suggested,
+            "recommended_size": suggested, # Alias for pipeline
             "confidence": confidence,
             "fit_notes": f"Based on {brand} fit profile. Brand runs {'small' if profile.bias < 0 else 'large' if profile.bias > 0 else 'true to size'}."
+        }
+
+    def generate_fit_heatmap(self, avatar_profile: Dict[str, Any], product_metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Генерирует тепловую карту натяжения ткани.
+        """
+        import random
+        # Stub: Generate a 10x30 grid of tension values
+        grid = []
+        for _ in range(30): # Rows
+            grid.append([round(random.uniform(0.1, 0.9), 2) for _ in range(10)]) # Columns
+            
+        return {
+            "heatmap": grid,
+            "max_tension": 0.85,
+            "status": "thermal_sync_ok"
         }

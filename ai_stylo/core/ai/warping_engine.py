@@ -9,6 +9,33 @@ class WarpingEngine:
     Использует Thin Plate Spline (TPS) для деформации ткани по точкам скелета.
     """
     
+    def process_garment(self, item_img: Any) -> Any:
+        """
+        Препроцессинг изображения одежды (удаление фона, нормализация).
+        В MVP возвращает изображение як є.
+        """
+        return item_img
+
+    def align_garment(self, item_img: Any, landmarks: Dict[str, List[float]]) -> Any:
+        """
+        Аліас для warp_item_to_pose для роботи з Pipeline.
+        """
+        # PIL до numpy
+        if hasattr(item_img, 'resize'): 
+             import numpy as np
+             from PIL import Image
+             # Convert PIL to OpenCV (RGBA -> BGRA)
+             item_np = np.array(item_img.convert("RGBA"))
+             item_np = cv2.cvtColor(item_np, cv2.COLOR_RGBA2BGRA)
+             
+             # Warp
+             warped_np = self.warp_item_to_pose(item_np, landmarks, (800, 600))
+             
+             # До PIL
+             return Image.fromarray(cv2.cvtColor(warped_np, cv2.COLOR_BGRA2RGBA))
+        
+        return item_img
+
     def warp_item_to_pose(self, item_img: np.ndarray, landmarks: Dict[str, List[float]], target_size: tuple) -> np.ndarray:
         """
         Трансформирует одежду, используя ключевые точки (плечи, бедра, локти).

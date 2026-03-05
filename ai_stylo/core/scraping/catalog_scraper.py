@@ -8,10 +8,12 @@ class CatalogScraper:
     Симулирует парсинг карточки товара по URL.
     """
     
-    def scrape_url(self, url: str) -> Dict[str, Any]:
+
+    def scrape_product(self, url: str) -> Dict[str, Any]:
         """
         Парсит URL и возвращает структурированные данные о товаре.
         """
+        # Alias for backward compatibility if needed: scrape_url = scrape_product
         print(f"Scraping product from: {url}")
         time.sleep(0.5) # Имитация сетевой задержки
         
