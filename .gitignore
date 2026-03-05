@@ -51,3 +51,6 @@ artifacts/
 # Test scripts
 test_*.py
 !test_suite.py
+
+# Temp uploads
+.tmp.driveupload/

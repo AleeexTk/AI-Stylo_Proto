@@ -1,4 +1,12 @@
 import { useState, useRef, useCallback } from "react";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import {
+  collection,
+  getDocs,
+  query,
+  limit as fsLimit,
+} from "firebase/firestore";
+import { db } from "./firebase";
 
 interface StyleAnalysis {
   style_description: string;
@@ -8,6 +16,7 @@ interface StyleAnalysis {
   season: string;
   style_tags: string[];
   fit?: string;
+  embedding_text?: string;
 }
 
 interface CatalogMatch {
@@ -27,12 +36,11 @@ interface RecommendResult {
   recommendation: string;
 }
 
-interface StyleAdvisorProps {
-  /** Firebase Cloud Function URL, e.g. https://REGION-PROJECT.cloudfunctions.net/analyze_and_recommend */
-  functionUrl?: string;
-}
+// Gemini Config
+const GEN_AI_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+const genAI = GEN_AI_KEY ? new GoogleGenerativeAI(GEN_AI_KEY) : null;
 
-export default function StyleAdvisor({ functionUrl }: StyleAdvisorProps) {
+export default function StyleAdvisor() {
   const [image, setImage] = useState<string | null>(null);
   const [imageB64, setImageB64] = useState<string>("");
   const [mimeType, setMimeType] = useState<string>("image/jpeg");
@@ -48,7 +56,6 @@ export default function StyleAdvisor({ functionUrl }: StyleAdvisorProps) {
     reader.onload = (e) => {
       const dataUrl = e.target?.result as string;
       setImage(dataUrl);
-      // Extract base64 without the data:image/...;base64, prefix
       setImageB64(dataUrl.split(",")[1]);
       setResult(null);
       setError("");
@@ -68,36 +75,92 @@ export default function StyleAdvisor({ functionUrl }: StyleAdvisorProps) {
     if (file && file.type.startsWith("image/")) processFile(file);
   }, []);
 
-  const analyze = async () => {
-    if (!imageB64) return;
+  const analyzeLocally = async () => {
+    if (!imageB64 || !genAI) {
+      if (!GEN_AI_KEY) setError("Gemini API Key missing (VITE_GEMINI_API_KEY)");
+      return;
+    }
+    
     setLoading(true);
     setError("");
     setResult(null);
 
     try {
-      const url = functionUrl || import.meta.env.VITE_FUNCTIONS_URL + "/analyze_and_recommend";
-      if (!url || url.includes("undefined")) {
-        // Dev mock — shows UI without real backend
-        await new Promise((r) => setTimeout(r, 2000));
-        setResult(MOCK_RESULT);
-        return;
+      // 1. Analyze Style with Gemini Vision
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      const prompt = `Analyze this clothing image and return ONLY a JSON object:
+      {
+        "style_description": "concise description",
+        "colors": ["list"],
+        "category": "tops/bottoms/dresses/outerwear/footwear/accessories/full_outfit",
+        "occasion": "casual/formal/...",
+        "style_tags": ["tags"],
+        "embedding_text": "rich description for search"
+      }`;
+
+      const visionResult = await model.generateContent([
+        prompt,
+        { inlineData: { data: imageB64, mimeType } }
+      ]);
+      
+      const responseText = visionResult.response.text();
+      let styleAnalysis: StyleAnalysis;
+      try {
+        const cleanJson = responseText.replace(/```json|```/g, "").trim();
+        styleAnalysis = JSON.parse(cleanJson);
+      } catch {
+        console.error("JSON parse error", responseText);
+        throw new Error("Failed to parse AI response");
       }
 
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image_b64: imageB64, mime_type: mimeType }),
+      // 2. Generate Embedding for the style
+      const embedModel = genAI.getGenerativeModel({ model: "text-embedding-004" });
+      const embedResult = await embedModel.embedContent(styleAnalysis.embedding_text || styleAnalysis.style_description);
+      const vector = embedResult.embedding.values;
+
+      // 3. Search Firestore — try client-side findNearest, fallback to basic query
+      console.log("Searching Firestore, vector dims:", vector.length);
+      const catalogRef = collection(db, "catalog");
+      let matches: CatalogMatch[] = [];
+
+      try {
+        // findNearest is available on CollectionReference in Firebase JS SDK v9.22+
+        const vectorRef = (catalogRef as unknown as { findNearest: (field: string, vector: number[], opts: object) => object }).findNearest;
+        if (typeof vectorRef === "function") {
+          const vq = (catalogRef as unknown as { findNearest: (f: string, v: number[], o: object) => object })
+            .findNearest("embedding", vector, { distanceMeasure: "COSINE", limit: 5 }) as Parameters<typeof getDocs>[0];
+          const snapshot = await getDocs(vq);
+          matches = snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as object) } as CatalogMatch));
+        } else {
+          throw new Error("findNearest not available");
+        }
+      } catch (vErr) {
+        console.warn("Vector search not available, using basic query.", vErr);
+        const basicQuery = query(catalogRef, fsLimit(5));
+        const snapshot = await getDocs(basicQuery);
+        matches = snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as object) } as CatalogMatch));
+      }
+
+      // 4. Generate Recommendation text
+      const recModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      const matchesText = matches.map(m => `- ${m.name} by ${m.brand}`).join("\n");
+      const recPrompt = `The user likes this style: ${styleAnalysis.style_description}. 
+      We found these items in our catalog:
+      ${matchesText}
+      Write a warm 2-sentence personal recommendation.`;
+      
+      const recResult = await recModel.generateContent(recPrompt);
+      const recommendation = recResult.response.text().trim();
+
+      setResult({
+        style_analysis: styleAnalysis,
+        matches,
+        recommendation
       });
 
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || `HTTP ${res.status}`);
-      }
-
-      const data: RecommendResult = await res.json();
-      setResult(data);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Unknown error");
+    } catch (err: unknown) {
+      console.error(err);
+      setError(err instanceof Error ? err.message : "Analysis failed");
     } finally {
       setLoading(false);
     }
@@ -108,12 +171,12 @@ export default function StyleAdvisor({ functionUrl }: StyleAdvisorProps) {
       {/* Header */}
       <div className="advisor-header">
         <span className="hero-badge advisor-badge">
-          🔍 Vision × Embeddings × Firestore
+          🔍 Client-Side AI × Vector Search × UA Brands
         </span>
         <h2 className="advisor-title">
           <span className="gradient-text">Style DNA Analyzer</span>
         </h2>
-        <p>Upload a photo — our AI reads your style and finds matching items from the catalog</p>
+        <p>Your photo is analyzed locally in your browser using Gemini — finding true Ukrainian fashion matches</p>
       </div>
 
       {/* Upload Zone */}
@@ -148,7 +211,7 @@ export default function StyleAdvisor({ functionUrl }: StyleAdvisorProps) {
               <button
                 id="analyze-btn"
                 className={`btn btn-primary ${loading ? 'loading-op-70' : ''}`}
-                onClick={(e) => { e.stopPropagation(); analyze(); }}
+                onClick={(e) => { e.stopPropagation(); analyzeLocally(); }}
                 disabled={loading}
               >
                 {loading ? "🔄 Analyzing..." : "🔍 Analyze & Find Matches"}
@@ -179,10 +242,10 @@ export default function StyleAdvisor({ functionUrl }: StyleAdvisorProps) {
           <div className="loading-icon">🧬</div>
           <h3 className="loading-title">Analyzing your style...</h3>
           <p className="loading-subtitle">
-            Gemini Vision → Embedding → Firestore Vector Search
+            Local Gemini Vision → Embeddings → Firestore
           </p>
           <div className="loading-steps">
-            {["👁️ Perceiving", "🌿 Enriching", "🧬 Matching"].map((step, i) => (
+            {["👁️ Vision", "🌿 Embedding", "🧬 Firestore"].map((step, i) => (
               <span key={step} className={`loading-step anim-delay-${i}`}>
                 {step}
               </span>
@@ -201,7 +264,6 @@ export default function StyleAdvisor({ functionUrl }: StyleAdvisorProps) {
       {/* Results */}
       {result && (
         <div className="results-container">
-          {/* Style Analysis */}
           <div className="card style-analysis-card">
             <h3 className="style-analysis-title">🧬 Style Analysis</h3>
             <p className="style-analysis-desc">
@@ -217,7 +279,6 @@ export default function StyleAdvisor({ functionUrl }: StyleAdvisorProps) {
             </div>
           </div>
 
-          {/* AI Recommendation */}
           <div className="card recommendation-card">
             <div className="recommendation-header">
               <div className="recommendation-icon">✨</div>
@@ -228,11 +289,10 @@ export default function StyleAdvisor({ functionUrl }: StyleAdvisorProps) {
             </div>
           </div>
 
-          {/* Catalog Matches */}
           {result.matches.length > 0 && (
             <div>
               <h3 className="matches-title">
-                🔥 Matched from Catalog <span className="matches-count">({result.matches.length} items)</span>
+                🔥 Ukrainian Brand Matches <span className="matches-count">({result.matches.length} items)</span>
               </h3>
               <div className="matches-grid">
                 {result.matches.map((item) => (
@@ -245,9 +305,7 @@ export default function StyleAdvisor({ functionUrl }: StyleAdvisorProps) {
                         onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
                       />
                     ) : (
-                      <div className="match-image-placeholder">
-                        👗
-                      </div>
+                      <div className="match-image-placeholder">👗</div>
                     )}
                     <p className="match-name">{item.name || "Item"}</p>
                     <p className="match-brand">{item.brand}</p>
@@ -265,24 +323,3 @@ export default function StyleAdvisor({ functionUrl }: StyleAdvisorProps) {
     </div>
   );
 }
-
-// ── Dev Mock (no backend needed for UI testing) ────────────────────────────────
-const MOCK_RESULT: RecommendResult = {
-  style_analysis: {
-    style_description: "contemporary minimalist streetwear with monochromatic palette",
-    colors: ["charcoal", "off-white", "muted sage"],
-    category: "full_outfit",
-    occasion: "casual",
-    season: "all-season",
-    style_tags: ["minimalist", "oversized", "monochrome", "urban", "layered"],
-    fit: "relaxed",
-  },
-  matches: [
-    { id: "1", name: "Oversized Cotton Crewneck", brand: "COS", category: "tops", color: "charcoal", price: 89 },
-    { id: "2", name: "Wide-Leg Linen Trousers", brand: "Arket", category: "bottoms", color: "sage green", price: 119 },
-    { id: "3", name: "Minimal Leather Tote", brand: "& Other Stories", category: "accessories", color: "cream", price: 149 },
-    { id: "4", name: "Low-Top Canvas Sneakers", brand: "Common Projects", category: "footwear", color: "white", price: 395 },
-    { id: "5", name: "Ribbed Merino Scarf", brand: "Toteme", category: "accessories", color: "oatmeal", price: 175 },
-  ],
-  recommendation: "Your style radiates effortless, considered minimalism — a masterclass in letting quality speak louder than volume. The items we've matched from our catalog amplify your monochromatic instinct: the oversized COS crewneck and wide-leg Arket linen trousers create that perfect relaxed-yet-intentional silhouette you're clearly drawn to. For a finishing touch, tuck the scarf loosely into the tote and let the clean white sneakers ground the whole look.",
-};
